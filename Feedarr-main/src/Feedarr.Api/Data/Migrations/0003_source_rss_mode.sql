@@ -1,1 +1,0 @@
-ALTER TABLE sources ADD COLUMN rss_mode TEXT;
