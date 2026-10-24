@@ -27,6 +27,11 @@ STACK_DIR="/opt/feedarr-stack"
 CREDENTIALS_FILE="/root/feedarr-stack-credentials.txt"
 LOG_FILE="/var/log/feedarr-stack-install.log"
 
+FORCE="${FORCE:-0}"   # FORCE=1: reinstall steps that are already done
+
+# Minimal Debian LXC templates have no generated locales: C.UTF-8 always exists.
+export LANG=C.UTF-8 LC_ALL=C.UTF-8 LANGUAGE=
+
 PORT_FEEDARR=8888
 PORT_SEERR=5055
 PORT_PROWLARR=9696
@@ -44,6 +49,37 @@ die()  { printf '%s✖%s %s\n' "$C_ERR" "$C_OFF" "$*" >&2; exit 1; }
 trap 'die "Hiba a(z) $LINENO. sorban (parancs: $BASH_COMMAND). Részletek: $LOG_FILE"' ERR
 
 run() { "$@" >>"$LOG_FILE" 2>&1; }
+
+# Print the end of the log so the actual error is visible without opening the file.
+die_with_log() {
+  printf '\n%s── a napló utolsó sorai (%s) ──%s\n' "$C_WARN" "$LOG_FILE" "$C_OFF" >&2
+  tail -n 40 "$LOG_FILE" >&2 || true
+  die "$1"
+}
+
+rand_password() { # 16 alphanumeric characters
+  head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | cut -c1-16
+}
+
+# step <name> <is-done-check> <install-function>
+# Already installed steps are skipped, so a failed installation can simply be restarted.
+step() {
+  local name="$1" check="$2" fn="$3"
+  if [[ "$FORCE" != "1" ]] && "$check" 2>/dev/null; then
+    ok "$name már telepítve – kihagyva (FORCE=1 az újratelepítéshez)"
+    return 0
+  fi
+  "$fn"
+}
+
+svc_enabled() { systemctl is-enabled "$1" >/dev/null 2>&1; }
+done_sonarr()   { [[ -x /opt/Sonarr/Sonarr ]] && svc_enabled sonarr; }
+done_radarr()   { [[ -x /opt/Radarr/Radarr ]] && svc_enabled radarr; }
+done_prowlarr() { [[ -x /opt/Prowlarr/Prowlarr ]] && svc_enabled prowlarr; }
+done_qbit()     { [[ -f /var/lib/qbittorrent/qBittorrent/config/qBittorrent.conf ]] && svc_enabled qbittorrent; }
+done_tautulli() { [[ -f /opt/Tautulli/version.txt && -x /opt/Tautulli/.venv/bin/python3 ]] && svc_enabled tautulli; }
+done_seerr()    { [[ -f /opt/seerr/.feedarr-stack-release && -f /opt/seerr/dist/index.js ]] && svc_enabled seerr; }
+done_feedarr()  { [[ -f /opt/feedarr/Feedarr.Api.dll ]] && svc_enabled feedarr; }
 
 retry() {
   local n=0
@@ -119,9 +155,9 @@ create_user_and_dirs() {
   fi
   if ! id "$MEDIA_USER" >/dev/null 2>&1; then
     if getent passwd "$MEDIA_UID" >/dev/null; then
-      useradd -r -g "$MEDIA_USER" -d /var/lib/feedarr-stack -s /usr/sbin/nologin "$MEDIA_USER"
+      useradd -M -g "$MEDIA_USER" -d /var/lib/feedarr-stack -s /usr/sbin/nologin "$MEDIA_USER"
     else
-      useradd -r -u "$MEDIA_UID" -g "$MEDIA_USER" -d /var/lib/feedarr-stack -s /usr/sbin/nologin "$MEDIA_USER"
+      useradd -M -u "$MEDIA_UID" -g "$MEDIA_USER" -d /var/lib/feedarr-stack -s /usr/sbin/nologin "$MEDIA_USER"
     fi
   fi
 
@@ -211,7 +247,7 @@ install_qbittorrent() {
 
   if [[ ! -f "$conf" ]]; then
     QBIT_USER="admin"
-    QBIT_PASS="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16 || true)"
+    QBIT_PASS="$(rand_password)"
     local hash
     hash="$(qbit_password_hash "$QBIT_PASS")"
     cat >"$conf" <<EOF
@@ -360,7 +396,7 @@ build_seerr() { # tag url
     export CYPRESS_INSTALL_BINARY=0 NODE_OPTIONS="--max-old-space-size=3072" NEXT_TELEMETRY_DISABLED=1
     pnpm install --frozen-lockfile
     pnpm build
-  ) >>"$LOG_FILE" 2>&1 || die "A Seerr fordítása nem sikerült (kevés RAM?). Részletek: $LOG_FILE"
+  ) >>"$LOG_FILE" 2>&1 || die_with_log "A Seerr fordítása nem sikerült (kevés RAM?)."
 
   systemctl stop seerr 2>/dev/null || true
   rm -rf /opt/seerr.old
@@ -428,7 +464,7 @@ build_feedarr() {
     cd "$root/src/Feedarr.Web/feedarr-web"
     npm ci --no-audit --no-fund
     npm run build
-  ) >>"$LOG_FILE" 2>&1 || die "A Feedarr webes felület fordítása nem sikerült. Részletek: $LOG_FILE"
+  ) >>"$LOG_FILE" 2>&1 || die_with_log "A Feedarr webes felület fordítása nem sikerült."
 
   msg "Feedarr szerver fordítása (.NET 10)…"
   local out
@@ -436,8 +472,10 @@ build_feedarr() {
   (
     cd "$root"
     export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
-    /usr/share/dotnet/dotnet publish src/Feedarr.Api/Feedarr.Api.csproj -c Release -o "$out" -p:BuildWebOnPublish=false
-  ) >>"$LOG_FILE" 2>&1 || die "A Feedarr fordítása nem sikerült. Részletek: $LOG_FILE"
+    # OpenApiGenerateDocuments=false: no build-time OpenAPI generation (it would start the app during the build)
+    /usr/share/dotnet/dotnet publish src/Feedarr.Api/Feedarr.Api.csproj -c Release -o "$out" \
+      -p:BuildWebOnPublish=false -p:OpenApiGenerateDocuments=false -p:OpenApiGenerateDocumentsOnBuild=false
+  ) >>"$LOG_FILE" 2>&1 || die_with_log "A Feedarr fordítása nem sikerült."
   # Same layout as the Docker image: the React build is served from wwwroot/
   install -d "$out/wwwroot"
   cp -a "$root/src/Feedarr.Web/feedarr-web/dist/." "$out/wwwroot/"
@@ -626,6 +664,7 @@ main() {
   fi
 
   msg "Feedarr Stack telepítése – napló: $LOG_FILE"
+  printf 'LANG=C.UTF-8\n' >/etc/default/locale 2>/dev/null || true
   check_os
   detect_arch
   check_resources
@@ -646,15 +685,15 @@ main() {
     -e "s|^FEEDARR_BRANCH=.*|FEEDARR_BRANCH=\"\${FEEDARR_BRANCH:-${FEEDARR_BRANCH}}\"|" \
     "$STACK_DIR/install-stack.sh"
 
-  install_sonarr
-  install_radarr
-  install_prowlarr
-  install_qbittorrent
-  install_tautulli
+  step "Sonarr"      done_sonarr   install_sonarr
+  step "Radarr"      done_radarr   install_radarr
+  step "Prowlarr"    done_prowlarr install_prowlarr
+  step "qBittorrent" done_qbit     install_qbittorrent
+  step "Tautulli"    done_tautulli install_tautulli
   install_nodejs
-  install_seerr
+  step "Seerr"       done_seerr    install_seerr
   install_dotnet
-  install_feedarr
+  step "Feedarr"     done_feedarr  install_feedarr
   install_cli
   print_summary
 }

@@ -107,7 +107,7 @@ if [[ -n "$MEDIA_HOST_PATH" ]]; then
 fi
 
 if [[ -z "$CT_PASSWORD" ]]; then
-  CT_PASSWORD="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16 || true)"
+  CT_PASSWORD="$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | cut -c1-16)"
 fi
 
 printf '\n  %sÖsszegzés%s: CT %s (%s) · %s mag · %s MB RAM · %s GB @ %s · %s/%s%s\n' \
@@ -188,7 +188,7 @@ SCRIPT_DIR="/nonexistent"
 if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
-pct exec "$CTID" -- bash -c "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq curl ca-certificates >/dev/null"
+pct exec "$CTID" -- env LANG=C.UTF-8 LC_ALL=C.UTF-8 bash -c "export DEBIAN_FRONTEND=noninteractive; echo LANG=C.UTF-8 > /etc/default/locale; apt-get update -qq && apt-get install -y -qq curl ca-certificates >/dev/null"
 if [[ -f "$SCRIPT_DIR/install-stack.sh" ]]; then
   msg "Telepítő másolása a konténerbe (helyi példány)…"
   pct push "$CTID" "$SCRIPT_DIR/install-stack.sh" /root/install-stack.sh --perms 0755
@@ -198,7 +198,9 @@ else
 fi
 
 msg "Alkalmazások telepítése a konténerben (15–30 perc, főleg a Seerr fordítása miatt)…"
-pct exec "$CTID" -- env LANG=C.UTF-8 FEEDARR_REPO="$FEEDARR_REPO" FEEDARR_BRANCH="$FEEDARR_BRANCH" bash /root/install-stack.sh
+pct exec "$CTID" -- env LANG=C.UTF-8 LC_ALL=C.UTF-8 FEEDARR_REPO="$FEEDARR_REPO" FEEDARR_BRANCH="$FEEDARR_BRANCH" bash /root/install-stack.sh \
+  || die "A telepítés megszakadt. Folytatás (a kész lépéseket kihagyja):
+  pct exec $CTID -- bash -c \"curl -fsSL -o /root/install-stack.sh https://raw.githubusercontent.com/${FEEDARR_REPO}/${FEEDARR_BRANCH}/proxmox/install-stack.sh && bash /root/install-stack.sh\""
 
 CT_IP="$(pct exec "$CTID" -- hostname -I 2>/dev/null | awk '{print $1}')"
 printf '\n%s════════════════════════════════════════════════════════════════%s\n' "$C_OK" "$C_OFF"
