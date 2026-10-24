@@ -1,0 +1,3674 @@
+using Dapper;
+using Feedarr.Api.Data;
+using Feedarr.Api.Dtos.Sources;
+using Feedarr.Api.Models;
+using Feedarr.Api.Services.Categories;
+using Feedarr.Api.Services.Matching;
+using Feedarr.Api.Services.Torznab;
+using Feedarr.Api.Services.Titles;
+using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using System.Data;
+using PosterServices = Feedarr.Api.Services.Posters;
+
+namespace Feedarr.Api.Data.Repositories;
+
+public sealed class ReleaseRepository
+{
+    private readonly Db _db;
+    private readonly TitleParser _parser;
+    private readonly UnifiedCategoryResolver _resolver;
+    private readonly ILogger<ReleaseRepository> _logger;
+    private readonly Feedarr.Api.Services.BadgeSignal? _badgeSignal;
+
+    private static readonly string[] RetentionUnifiedCategories =
+    {
+        nameof(UnifiedCategory.Film),
+        nameof(UnifiedCategory.Serie),
+        nameof(UnifiedCategory.Emission),
+        nameof(UnifiedCategory.Spectacle),
+        nameof(UnifiedCategory.JeuWindows),
+        nameof(UnifiedCategory.Animation),
+        nameof(UnifiedCategory.Anime),
+        nameof(UnifiedCategory.Audio),
+        nameof(UnifiedCategory.Book),
+        nameof(UnifiedCategory.Comic)
+    };
+
+    private static readonly string[] TopSpectacleKeywords =
+    [
+        "spectacle",
+        "concert",
+        "opera",
+        "theatre",
+        "ballet"
+    ];
+
+    private static readonly string[] TopEmissionKeywords =
+    [
+        "emission",
+        "enquete",
+        "magazine",
+        "talk",
+        "show",
+        "reportage",
+        "documentaire",
+        "docu",
+        "quotidien"
+    ];
+
+    private const long DefaultMissingPosterShortCooldownSeconds = 15 * 60;
+    private const long DefaultMissingPosterHardFailCooldownSeconds = 24 * 60 * 60;
+    private const string SqlTmdbMediaTypeNormalizedExpr = """
+        CASE
+          WHEN lower(trim(COALESCE(r.media_type, ''))) IN ('series', 'tv', 'show') THEN 'series'
+          WHEN lower(trim(COALESCE(r.media_type, ''))) IN ('movie', 'film') THEN 'movie'
+          WHEN lower(trim(COALESCE(r.unified_category, ''))) IN ('serie', 'series', 'emission') THEN 'series'
+          WHEN lower(trim(COALESCE(r.unified_category, ''))) IN ('film', 'spectacle', 'animation') THEN 'movie'
+          ELSE NULL
+        END
+        """;
+
+    public ReleaseRepository(
+        Db db,
+        TitleParser parser,
+        UnifiedCategoryResolver resolver,
+        ILogger<ReleaseRepository>? logger = null,
+        Feedarr.Api.Services.BadgeSignal? badgeSignal = null)
+    {
+        _db = db;
+        _parser = parser;
+        _resolver = resolver;
+        _logger = logger ?? NullLogger<ReleaseRepository>.Instance;
+        _badgeSignal = badgeSignal;
+    }
+
+    public int UpsertMany(
+        long sourceId,
+        string indexerKey,
+        IEnumerable<TorznabItem> items,
+        long? createdAtTs = null,
+        int defaultSeen = 0,
+        Dictionary<int, (string key, string label)>? categoryMap = null)
+    {
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        using var conn = _db.Open();
+        using var tx = conn.BeginTransaction();
+
+        var itemList = items as IList<TorznabItem> ?? items.ToList();
+        var now = createdAtTs ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+        var sql = $"""
+        INSERT INTO releases(
+          source_id, guid, title, link, published_at_ts,
+                    size_bytes, seeders, leechers, grabs, info_hash, download_url, category_id,
+                    std_category_id, spec_category_id, unified_category, category_ids,
+                    title_normalized, dedupe_key, top_category_key,
+          raw_json, seen, created_at_ts,
+
+          title_clean, year, season, episode, resolution, source, codec, release_group, media_type,
+          tag_hun
+        )
+        VALUES(
+          @sourceId, @guid, @title, @link, @pub,
+                    @size, @seed, @leech, @grabs, @hash, @dl, @cat,
+                    @stdCat, @specCat, @unifiedCat, @catIds,
+                    @titleNormalized, @dedupeKey, @topCategoryKey,
+          NULL, {defaultSeen}, @now,
+
+          @titleClean, @year, @season, @episode, @resolution, @source, @codec, @group, @mediaType,
+          @tagHun
+        )
+        ON CONFLICT(source_id, guid) DO UPDATE SET
+          title = CASE
+                    WHEN COALESCE(releases.title_manual_override, 0) = 1 THEN releases.title
+                    ELSE excluded.title
+                  END,
+          link = excluded.link,
+          published_at_ts = excluded.published_at_ts,
+          size_bytes = COALESCE(excluded.size_bytes, releases.size_bytes),
+          seeders = COALESCE(excluded.seeders, releases.seeders),
+          leechers = COALESCE(excluded.leechers, releases.leechers),
+                    grabs = COALESCE(excluded.grabs, releases.grabs),
+          info_hash = COALESCE(excluded.info_hash, releases.info_hash),
+          download_url = COALESCE(excluded.download_url, releases.download_url),
+          category_id = COALESCE(excluded.category_id, releases.category_id),
+          std_category_id = COALESCE(excluded.std_category_id, releases.std_category_id),
+          spec_category_id = COALESCE(excluded.spec_category_id, releases.spec_category_id),
+          unified_category = COALESCE(excluded.unified_category, releases.unified_category),
+          category_ids = COALESCE(excluded.category_ids, releases.category_ids),
+          title_normalized = COALESCE(excluded.title_normalized, releases.title_normalized),
+          dedupe_key = COALESCE(excluded.dedupe_key, releases.dedupe_key),
+          top_category_key = COALESCE(excluded.top_category_key, releases.top_category_key),
+
+          title_clean = CASE
+                          WHEN COALESCE(releases.title_manual_override, 0) = 1 THEN releases.title_clean
+                          ELSE COALESCE(excluded.title_clean, releases.title_clean)
+                        END,
+          year = CASE
+                   WHEN COALESCE(releases.title_manual_override, 0) = 1 THEN releases.year
+                   ELSE COALESCE(excluded.year, releases.year)
+                 END,
+          season = CASE
+                     WHEN COALESCE(releases.title_manual_override, 0) = 1 THEN releases.season
+                     ELSE COALESCE(excluded.season, releases.season)
+                   END,
+          episode = CASE
+                      WHEN COALESCE(releases.title_manual_override, 0) = 1 THEN releases.episode
+                      ELSE COALESCE(excluded.episode, releases.episode)
+                    END,
+          resolution = CASE
+                         WHEN COALESCE(releases.title_manual_override, 0) = 1 THEN releases.resolution
+                         ELSE COALESCE(excluded.resolution, releases.resolution)
+                       END,
+          source = CASE
+                     WHEN COALESCE(releases.title_manual_override, 0) = 1 THEN releases.source
+                     ELSE COALESCE(excluded.source, releases.source)
+                   END,
+          codec = CASE
+                    WHEN COALESCE(releases.title_manual_override, 0) = 1 THEN releases.codec
+                    ELSE COALESCE(excluded.codec, releases.codec)
+                  END,
+          release_group = CASE
+                            WHEN COALESCE(releases.title_manual_override, 0) = 1 THEN releases.release_group
+                            ELSE COALESCE(excluded.release_group, releases.release_group)
+                          END,
+          media_type = CASE
+                         WHEN COALESCE(releases.title_manual_override, 0) = 1 THEN releases.media_type
+                         ELSE COALESCE(excluded.media_type, releases.media_type)
+                       END,
+          tag_hun = CASE WHEN excluded.tag_hun = 1 THEN 1 ELSE releases.tag_hun END;
+        """;
+
+        var rowsPayload = itemList.Select(it =>
+            {
+                var categoryIds = new List<int>();
+                if (it.CategoryIds is { Count: > 0 })
+                    categoryIds.AddRange(it.CategoryIds);
+                if (it.CategoryId.HasValue)
+                    categoryIds.Add(it.CategoryId.Value);
+
+                var distinctIds = categoryIds.Distinct().ToList();
+                var normalizedIds = CategoryNormalizationService.NormalizeCategoryIds(distinctIds).ToList();
+                var (stdCategoryId, specCategoryId) = UnifiedCategoryResolver.ResolveStdSpec(
+                    it.StdCategoryId,
+                    it.SpecCategoryId,
+                    normalizedIds);
+
+                var primaryCategoryId = it.CategoryId ?? specCategoryId ?? stdCategoryId;
+                var unifiedCategory = ResolveUnifiedCategoryFromMap(categoryMap, normalizedIds, primaryCategoryId);
+                if (unifiedCategory == UnifiedCategory.Autre)
+                {
+                    unifiedCategory = _resolver.Resolve(indexerKey, stdCategoryId, specCategoryId, normalizedIds);
+                }
+                var parsed = _parser.Parse(it.Title, unifiedCategory);
+                var titleNormalized = TitleNormalizer.NormalizeTitleStrict(parsed.TitleClean ?? it.Title);
+                var normalizedMediaType = string.IsNullOrWhiteSpace(parsed.MediaType)
+                    ? string.Empty
+                    : parsed.MediaType.Trim().ToLowerInvariant();
+                var topCategoryKey = BuildTopCategoryKey(
+                    unifiedCategory,
+                    categoryMap,
+                    normalizedIds,
+                    primaryCategoryId,
+                    parsed.TitleClean,
+                    it.Title);
+                var stableGuid = BuildStableGuid(it, parsed.TitleClean);
+                var dedupeKey = !string.IsNullOrWhiteSpace(titleNormalized)
+                    ? $"title_year:{titleNormalized}|{(parsed.Year.HasValue ? parsed.Year.Value.ToString() : "-")}|{normalizedMediaType}"
+                    : $"release:{stableGuid}";
+
+                var tagHun = HungarianTitleNormalizer.HasHungarianTag(it.Title) ? 1 : 0;
+                return new UpsertRow
+                {
+                    sourceId = sourceId,
+                    Guid = stableGuid,
+                    Title = it.Title,
+                    Link = it.Link,
+                    PublishedAtTs = it.PublishedAtTs,
+                    SizeBytes = it.SizeBytes,
+                    Seeders = it.Seeders,
+                    Leechers = it.Leechers,
+                    Grabs = it.Grabs,
+                    InfoHash = it.InfoHash,
+                    DownloadUrl = it.DownloadUrl,
+                    CategoryId = primaryCategoryId,
+                    StdCategoryId = stdCategoryId,
+                    SpecCategoryId = specCategoryId,
+                    UnifiedCategory = unifiedCategory.ToString(),
+                    CategoryIds = distinctIds.Count > 0 ? string.Join(",", distinctIds) : null,
+                    TitleNormalized = titleNormalized,
+                    DedupeKey = dedupeKey,
+                    TopCategoryKey = topCategoryKey,
+                    now = now,
+
+                    TitleClean = parsed.TitleClean,
+                    Year = parsed.Year,
+                    Season = parsed.Season,
+                    Episode = parsed.Episode,
+                    Resolution = parsed.Resolution,
+                    Source = parsed.Source,
+                    Codec = parsed.Codec,
+                    ReleaseGroup = parsed.ReleaseGroup,
+                    MediaType = parsed.MediaType,
+                    TagHun = tagHun
+                };
+            })
+            .ToList();
+
+        var guidList = rowsPayload
+            .Select(r => r.Guid)
+            .Where(g => !string.IsNullOrWhiteSpace(g))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // Chunked query pour éviter la limite SQLite ~999 items par clause IN
+        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var chunk in SqlChunkHelper.Chunk(guidList, 500))
+        {
+            var rows = conn.Query<string>(
+                "SELECT guid FROM releases WHERE source_id = @sid AND guid IN @guids",
+                new { sid = sourceId, guids = chunk },
+                tx);
+            foreach (var g in rows) existing.Add(g);
+        }
+
+        var insertedNew = guidList.Count - existing.Count;
+
+        ExecuteUpsertPrepared(conn, tx, sql, rowsPayload);
+
+        EnsureMediaEntitiesForReleases(conn, tx, sourceId, guidList, now);
+
+        tx.Commit();
+        stopwatch.Stop();
+
+        var rowsCount = rowsPayload.Count;
+        var msPerRow = rowsCount > 0
+            ? stopwatch.Elapsed.TotalMilliseconds / rowsCount
+            : 0d;
+        _logger.LogInformation(
+            "method=UpsertMany sourceId={SourceId} rowsCount={RowsCount} existingCount={ExistingCount} insertedNew={InsertedNew} elapsedMs={ElapsedMs} msPerRow={MsPerRow}",
+            sourceId,
+            rowsCount,
+            existing.Count,
+            insertedNew,
+            stopwatch.ElapsedMilliseconds,
+            msPerRow);
+
+        if (rowsCount > 0)
+            _badgeSignal?.Notify("releases");
+
+        return insertedNew;
+    }
+
+    private static void ExecuteUpsertPrepared(
+        IDbConnection conn,
+        IDbTransaction tx,
+        string sql,
+        IReadOnlyList<UpsertRow> rows)
+    {
+        if (rows.Count == 0)
+            return;
+
+        if (conn is not SqliteConnection sqliteConn)
+            throw new InvalidOperationException("UpsertMany prepared execution requires SqliteConnection.");
+        if (tx is not SqliteTransaction sqliteTx)
+            throw new InvalidOperationException("UpsertMany prepared execution requires SqliteTransaction.");
+
+        using var cmd = sqliteConn.CreateCommand();
+        cmd.Transaction = sqliteTx;
+        cmd.CommandText = sql;
+
+        AddParameter(cmd, "@sourceId", SqliteType.Integer);
+        AddParameter(cmd, "@guid", SqliteType.Text);
+        AddParameter(cmd, "@title", SqliteType.Text);
+        AddParameter(cmd, "@link", SqliteType.Text);
+        AddParameter(cmd, "@pub", SqliteType.Integer);
+        AddParameter(cmd, "@size", SqliteType.Integer);
+        AddParameter(cmd, "@seed", SqliteType.Integer);
+        AddParameter(cmd, "@leech", SqliteType.Integer);
+        AddParameter(cmd, "@grabs", SqliteType.Integer);
+        AddParameter(cmd, "@hash", SqliteType.Text);
+        AddParameter(cmd, "@dl", SqliteType.Text);
+        AddParameter(cmd, "@cat", SqliteType.Integer);
+        AddParameter(cmd, "@stdCat", SqliteType.Integer);
+        AddParameter(cmd, "@specCat", SqliteType.Integer);
+        AddParameter(cmd, "@unifiedCat", SqliteType.Text);
+        AddParameter(cmd, "@catIds", SqliteType.Text);
+        AddParameter(cmd, "@titleNormalized", SqliteType.Text);
+        AddParameter(cmd, "@dedupeKey", SqliteType.Text);
+        AddParameter(cmd, "@topCategoryKey", SqliteType.Text);
+        AddParameter(cmd, "@now", SqliteType.Integer);
+        AddParameter(cmd, "@titleClean", SqliteType.Text);
+        AddParameter(cmd, "@year", SqliteType.Integer);
+        AddParameter(cmd, "@season", SqliteType.Integer);
+        AddParameter(cmd, "@episode", SqliteType.Integer);
+        AddParameter(cmd, "@resolution", SqliteType.Text);
+        AddParameter(cmd, "@source", SqliteType.Text);
+        AddParameter(cmd, "@codec", SqliteType.Text);
+        AddParameter(cmd, "@group", SqliteType.Text);
+        AddParameter(cmd, "@mediaType", SqliteType.Text);
+        AddParameter(cmd, "@tagHun", SqliteType.Integer);
+
+        cmd.Prepare();
+
+        foreach (var row in rows)
+        {
+            SetParameterValue(cmd, "@sourceId", row.sourceId);
+            SetParameterValue(cmd, "@guid", row.Guid);
+            SetParameterValue(cmd, "@title", row.Title);
+            SetParameterValue(cmd, "@link", row.Link);
+            SetParameterValue(cmd, "@pub", row.PublishedAtTs);
+            SetParameterValue(cmd, "@size", row.SizeBytes);
+            SetParameterValue(cmd, "@seed", row.Seeders);
+            SetParameterValue(cmd, "@leech", row.Leechers);
+            SetParameterValue(cmd, "@grabs", row.Grabs);
+            SetParameterValue(cmd, "@hash", row.InfoHash);
+            SetParameterValue(cmd, "@dl", row.DownloadUrl);
+            SetParameterValue(cmd, "@cat", row.CategoryId);
+            SetParameterValue(cmd, "@stdCat", row.StdCategoryId);
+            SetParameterValue(cmd, "@specCat", row.SpecCategoryId);
+            SetParameterValue(cmd, "@unifiedCat", row.UnifiedCategory);
+            SetParameterValue(cmd, "@catIds", row.CategoryIds);
+            SetParameterValue(cmd, "@titleNormalized", row.TitleNormalized);
+            SetParameterValue(cmd, "@dedupeKey", row.DedupeKey);
+            SetParameterValue(cmd, "@topCategoryKey", row.TopCategoryKey);
+            SetParameterValue(cmd, "@now", row.now);
+            SetParameterValue(cmd, "@titleClean", row.TitleClean);
+            SetParameterValue(cmd, "@year", row.Year);
+            SetParameterValue(cmd, "@season", row.Season);
+            SetParameterValue(cmd, "@episode", row.Episode);
+            SetParameterValue(cmd, "@resolution", row.Resolution);
+            SetParameterValue(cmd, "@source", row.Source);
+            SetParameterValue(cmd, "@codec", row.Codec);
+            SetParameterValue(cmd, "@group", row.ReleaseGroup);
+            SetParameterValue(cmd, "@mediaType", row.MediaType);
+            SetParameterValue(cmd, "@tagHun", row.TagHun);
+
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    private static void AddParameter(SqliteCommand cmd, string name, SqliteType type)
+    {
+        var parameter = cmd.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.SqliteType = type;
+        parameter.Value = DBNull.Value;
+        cmd.Parameters.Add(parameter);
+    }
+
+    private static void SetParameterValue(SqliteCommand cmd, string name, object? value)
+        => cmd.Parameters[name].Value = value ?? DBNull.Value;
+
+    private sealed class UpsertRow
+    {
+        public long sourceId { get; init; }
+        public string Guid { get; init; } = "";
+        public string? Title { get; init; }
+        public string? Link { get; init; }
+        public long? PublishedAtTs { get; init; }
+        public long? SizeBytes { get; init; }
+        public int? Seeders { get; init; }
+        public int? Leechers { get; init; }
+        public int? Grabs { get; init; }
+        public string? InfoHash { get; init; }
+        public string? DownloadUrl { get; init; }
+        public int? CategoryId { get; init; }
+        public int? StdCategoryId { get; init; }
+        public int? SpecCategoryId { get; init; }
+        public string UnifiedCategory { get; init; } = "";
+        public string? CategoryIds { get; init; }
+        public string? TitleNormalized { get; init; }
+        public string? DedupeKey { get; init; }
+        public string? TopCategoryKey { get; init; }
+        public long now { get; init; }
+        public string? TitleClean { get; init; }
+        public int? Year { get; init; }
+        public int? Season { get; init; }
+        public int? Episode { get; init; }
+        public string? Resolution { get; init; }
+        public string? Source { get; init; }
+        public string? Codec { get; init; }
+        public string? ReleaseGroup { get; init; }
+        public string? MediaType { get; init; }
+        public int TagHun { get; set; }
+    }
+
+    private static UnifiedCategory ResolveUnifiedCategoryFromMap(
+        Dictionary<int, (string key, string label)>? categoryMap,
+        IReadOnlyCollection<int> categoryIds,
+        int? primaryCategoryId)
+    {
+        if (categoryMap is null || categoryMap.Count == 0) return UnifiedCategory.Autre;
+        var bestId = CategorySelection.PickBestCategoryId(categoryIds, categoryMap);
+        if (!bestId.HasValue && primaryCategoryId.HasValue)
+            bestId = primaryCategoryId;
+
+        if (bestId.HasValue &&
+            categoryMap.TryGetValue(bestId.Value, out var entry) &&
+            UnifiedCategoryMappings.TryParseKey(entry.key, out var mapped))
+        {
+            return mapped;
+        }
+
+        return UnifiedCategory.Autre;
+    }
+
+    private static string? BuildTopCategoryKey(
+        UnifiedCategory unifiedCategory,
+        Dictionary<int, (string key, string label)>? categoryMap,
+        IReadOnlyCollection<int> categoryIds,
+        int? primaryCategoryId,
+        string? titleClean,
+        string? rawTitle)
+    {
+        if (unifiedCategory != UnifiedCategory.Autre)
+        {
+            var key = UnifiedCategoryMappings.ToKey(unifiedCategory);
+            if (!string.Equals(key, "other", StringComparison.Ordinal))
+                return key;
+        }
+
+        if (TryResolveMapCategoryKey(categoryMap, categoryIds, primaryCategoryId, out var mapKey))
+            return mapKey;
+
+        var normalizedTitle = NormalizeForCategoryHeuristics(titleClean ?? rawTitle);
+        if (ContainsAny(normalizedTitle, TopSpectacleKeywords))
+            return "spectacle";
+        if (ContainsAny(normalizedTitle, TopEmissionKeywords))
+            return "emissions";
+
+        return null;
+    }
+
+    private static bool TryResolveMapCategoryKey(
+        Dictionary<int, (string key, string label)>? categoryMap,
+        IReadOnlyCollection<int> categoryIds,
+        int? primaryCategoryId,
+        out string key)
+    {
+        key = string.Empty;
+        if (categoryMap is null || categoryMap.Count == 0)
+            return false;
+
+        var bestId = CategorySelection.PickBestCategoryId(categoryIds, categoryMap);
+        if (!bestId.HasValue && primaryCategoryId.HasValue)
+            bestId = primaryCategoryId;
+        if (!bestId.HasValue || !categoryMap.TryGetValue(bestId.Value, out var entry))
+            return false;
+
+        if (CategoryGroupCatalog.TryNormalizeKey(entry.key, out var canonicalFromKey))
+        {
+            key = canonicalFromKey;
+            return true;
+        }
+
+        var label = NormalizeForCategoryHeuristics(entry.label);
+        if (ContainsAny(label, ["pcgames", "game", "jeu"]))
+        {
+            key = "games";
+            return true;
+        }
+        if (label.Contains("anime", StringComparison.Ordinal))
+        {
+            key = "anime";
+            return true;
+        }
+        if (ContainsAny(label, ["audio", "music", "musique", "podcast"]))
+        {
+            key = "audio";
+            return true;
+        }
+        if (ContainsAny(label, ["book", "livre", "ebook"]))
+        {
+            key = "books";
+            return true;
+        }
+        if (ContainsAny(label, ["comic", "manga", "scan"]))
+        {
+            key = "comics";
+            return true;
+        }
+        if (ContainsAny(label, TopSpectacleKeywords))
+        {
+            key = "spectacle";
+            return true;
+        }
+        if (ContainsAny(label, ["documentary", "documentaire", "doc", "emission", "show", "magazine"]))
+        {
+            key = "emissions";
+            return true;
+        }
+        if (label is "movies" or "movie")
+        {
+            key = "films";
+            return true;
+        }
+        if (label is "tv")
+        {
+            key = "series";
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string NormalizeForCategoryHeuristics(string? value)
+    {
+        var normalized = TitleNormalizer.RemoveDiacritics((value ?? string.Empty).Trim().ToLowerInvariant());
+        return new string(normalized.Where(char.IsLetterOrDigit).ToArray());
+    }
+
+    private static bool ContainsAny(string value, IReadOnlyList<string> tokens)
+    {
+        if (string.IsNullOrEmpty(value))
+            return false;
+
+        foreach (var token in tokens)
+        {
+            if (value.Contains(token, StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static string BuildStableGuid(TorznabItem it, string? titleClean)
+    {
+        var guid = it.Guid?.Trim() ?? "";
+        if (!string.IsNullOrWhiteSpace(guid) &&
+            !string.Equals(guid, it.Title ?? "", StringComparison.OrdinalIgnoreCase))
+        {
+            return guid;
+        }
+
+        if (!string.IsNullOrWhiteSpace(it.InfoHash)) return it.InfoHash!;
+        if (!string.IsNullOrWhiteSpace(it.DownloadUrl)) return it.DownloadUrl!;
+        if (!string.IsNullOrWhiteSpace(it.Link)) return it.Link!;
+        if (!string.IsNullOrWhiteSpace(guid)) return guid;
+
+        var normalized = NormalizeTitle(titleClean ?? it.Title ?? "");
+        var size = it.SizeBytes ?? 0;
+        var pub = it.PublishedAtTs ?? 0;
+        var rounded = pub > 0 ? (pub / 3600) * 3600 : 0;
+        return $"{normalized}|{size}|{rounded}";
+    }
+
+    private static string NormalizeTitle(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "";
+        var chars = value
+            .ToLowerInvariant()
+            .Where(char.IsLetterOrDigit)
+            .ToArray();
+        return new string(chars);
+    }
+
+    private static void EnsureMediaEntitiesForReleases(
+        IDbConnection conn,
+        IDbTransaction tx,
+        long sourceId,
+        IEnumerable<string?> guids,
+        long now)
+    {
+        var guidList = guids
+            .Where(g => !string.IsNullOrWhiteSpace(g))
+            .Distinct()
+            .ToArray();
+
+        if (guidList.Length == 0) return;
+
+        conn.Execute(
+            """
+            INSERT INTO media_entities(
+              unified_category,
+              title_clean,
+              year,
+              poster_file,
+              poster_updated_at_ts,
+              created_at_ts,
+              updated_at_ts
+            )
+            SELECT DISTINCT
+              r.unified_category,
+              r.title_clean,
+              r.year,
+              NULL,
+              NULL,
+              @now,
+              @now
+            FROM releases r
+            WHERE r.source_id = @sid
+              AND r.guid IN @guids
+              AND (r.entity_id IS NULL OR r.entity_id <= 0)
+              AND r.unified_category IS NOT NULL
+              AND r.unified_category <> ''
+              AND r.title_clean IS NOT NULL
+              AND r.title_clean <> ''
+            ON CONFLICT DO UPDATE SET
+              updated_at_ts = excluded.updated_at_ts;
+            """,
+            new { sid = sourceId, guids = guidList, now },
+            tx
+        );
+
+        conn.Execute(
+            """
+            UPDATE releases
+            SET entity_id = (
+                SELECT me.id
+                FROM media_entities me
+                WHERE me.unified_category = releases.unified_category
+                  AND me.title_clean = releases.title_clean
+                  AND IFNULL(me.year, -1) = IFNULL(releases.year, -1)
+                LIMIT 1
+            )
+            WHERE source_id = @sid
+              AND guid IN @guids
+              AND (entity_id IS NULL OR entity_id <= 0)
+              AND unified_category IS NOT NULL
+              AND unified_category <> ''
+              AND title_clean IS NOT NULL
+              AND title_clean <> '';
+            """,
+            new { sid = sourceId, guids = guidList },
+            tx
+        );
+    }
+
+    public List<long> GetNewIdsWithoutPoster(long sourceId, long createdAtTs)
+    {
+        using var conn = _db.Open();
+        var rows = conn.Query<long>(
+            """
+            SELECT releases.id
+            FROM releases
+            LEFT JOIN media_entities me
+              ON me.id = releases.entity_id
+            WHERE releases.source_id = @sid
+              AND releases.created_at_ts >= @ts
+              AND (COALESCE(releases.poster_file, me.poster_file) IS NULL OR COALESCE(releases.poster_file, me.poster_file) = '')
+            ORDER BY releases.published_at_ts DESC, releases.id DESC;
+            """,
+            new { sid = sourceId, ts = createdAtTs }
+        );
+
+        return rows.ToList();
+    }
+
+    public sealed class PosterJobSeed
+    {
+        public long Id { get; set; }
+        public string? Title { get; set; }
+        public string? TitleClean { get; set; }
+        public int? Year { get; set; }
+        public string? UnifiedCategory { get; set; }
+        public long? EntityId { get; set; }
+    }
+
+    public List<PosterJobSeed> GetNewPosterJobSeeds(long sourceId, long createdAtTs)
+    {
+        using var conn = _db.Open();
+        var rows = conn.Query<PosterJobSeed>(
+            """
+            SELECT
+              releases.id as Id,
+              releases.title as Title,
+              releases.title_clean as TitleClean,
+              releases.year as Year,
+              releases.unified_category as UnifiedCategory,
+              entity_id as EntityId
+            FROM releases
+            LEFT JOIN media_entities me
+              ON me.id = releases.entity_id
+            WHERE releases.source_id = @sid
+              AND releases.created_at_ts >= @ts
+              AND (COALESCE(releases.poster_file, me.poster_file) IS NULL OR COALESCE(releases.poster_file, me.poster_file) = '')
+            ORDER BY releases.published_at_ts DESC, releases.id DESC;
+            """,
+            new { sid = sourceId, ts = createdAtTs }
+        );
+
+        return rows.AsList();
+    }
+
+    public List<long> GetIdsMissingPoster(int limit)
+    {
+        using var conn = _db.Open();
+        var lim = Math.Clamp(limit <= 0 ? 200 : limit, 1, 1000);
+        var rows = conn.Query<long>(
+            """
+            SELECT releases.id
+            FROM releases
+            LEFT JOIN media_entities me
+              ON me.id = releases.entity_id
+            WHERE (COALESCE(releases.poster_file, me.poster_file) IS NULL OR COALESCE(releases.poster_file, me.poster_file) = '')
+            ORDER BY releases.published_at_ts DESC, releases.id DESC
+            LIMIT @lim;
+            """,
+            new { lim }
+        );
+
+        return rows.ToList();
+    }
+
+    public async Task<IReadOnlyList<long>> GetReleaseIdsMissingPosterAsync(int limit, CancellationToken ct = default)
+    {
+        using var conn = _db.Open();
+        var lim = Math.Clamp(limit <= 0 ? 200 : limit, 1, 1000);
+        var rows = await conn.QueryAsync<long>(
+            new CommandDefinition(
+                """
+                SELECT releases.id
+                FROM releases
+                LEFT JOIN media_entities me
+                  ON me.id = releases.entity_id
+                WHERE (COALESCE(releases.poster_file, me.poster_file) IS NULL OR COALESCE(releases.poster_file, me.poster_file) = '')
+                ORDER BY releases.published_at_ts DESC, releases.id DESC
+                LIMIT @lim;
+                """,
+                new { lim },
+                cancellationToken: ct)).ConfigureAwait(false);
+
+        return rows.AsList();
+    }
+
+    public async Task<(int TotalMissing, int ActionableMissing)> GetMissingPosterActionableCountsAsync(
+        long nowTs,
+        long shortCooldownSeconds = DefaultMissingPosterShortCooldownSeconds,
+        long hardFailCooldownSeconds = DefaultMissingPosterHardFailCooldownSeconds,
+        CancellationToken ct = default)
+    {
+        using var conn = _db.Open();
+        var now = nowTs > 0 ? nowTs : DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var shortCooldown = Math.Clamp(
+            shortCooldownSeconds <= 0 ? DefaultMissingPosterShortCooldownSeconds : shortCooldownSeconds,
+            30L,
+            7L * 24L * 60L * 60L);
+        var hardCooldown = Math.Clamp(
+            hardFailCooldownSeconds <= 0 ? DefaultMissingPosterHardFailCooldownSeconds : hardFailCooldownSeconds,
+            shortCooldown,
+            14L * 24L * 60L * 60L);
+
+        var shortCutoff = now - shortCooldown;
+        var hardCutoff = now - hardCooldown;
+
+        var row = await conn.QueryFirstOrDefaultAsync(
+            new CommandDefinition(
+                """
+                WITH missing AS (
+                  SELECT
+                    releases.poster_last_attempt_ts as lastAttemptTs,
+                    CASE
+                      WHEN releases.poster_last_error IS NULL OR releases.poster_last_error = '' THEN 0
+                      WHEN (
+                        (instr(lower(releases.poster_last_error), 'no ') > 0
+                         AND instr(lower(releases.poster_last_error), 'match') > 0)
+                        OR instr(lower(releases.poster_last_error), 'missing ') > 0
+                        OR instr(lower(releases.poster_last_error), 'release not found') > 0
+                        OR instr(lower(releases.poster_last_error), 'title_clean missing') > 0
+                      ) THEN 1
+                      ELSE 0
+                    END as isHardFail
+                  FROM releases
+                  LEFT JOIN media_entities me
+                    ON me.id = releases.entity_id
+                  WHERE (COALESCE(releases.poster_file, me.poster_file) IS NULL OR COALESCE(releases.poster_file, me.poster_file) = '')
+                ),
+                actionable AS (
+                  SELECT 1
+                  FROM missing
+                  WHERE (
+                    lastAttemptTs IS NULL
+                    OR (isHardFail = 0 AND lastAttemptTs <= @shortCutoff)
+                    OR (isHardFail = 1 AND lastAttemptTs <= @hardCutoff)
+                  )
+                )
+                SELECT
+                  (SELECT COUNT(1) FROM missing) as totalMissing,
+                  (SELECT COUNT(1) FROM actionable) as actionableMissing;
+                """,
+                new { shortCutoff, hardCutoff },
+                cancellationToken: ct)).ConfigureAwait(false);
+
+        var totalMissing = row is null ? 0 : Convert.ToInt32(row.totalMissing ?? 0);
+        var actionableMissing = row is null ? 0 : Convert.ToInt32(row.actionableMissing ?? 0);
+        return (totalMissing, actionableMissing);
+    }
+
+    public async Task<IReadOnlyList<long>> GetReleaseIdsMissingPosterActionableAsync(
+        int limit,
+        long nowTs,
+        long shortCooldownSeconds = DefaultMissingPosterShortCooldownSeconds,
+        long hardFailCooldownSeconds = DefaultMissingPosterHardFailCooldownSeconds,
+        CancellationToken ct = default)
+    {
+        using var conn = _db.Open();
+        var lim = Math.Clamp(limit <= 0 ? 200 : limit, 1, 1000);
+        var now = nowTs > 0 ? nowTs : DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var shortCooldown = Math.Clamp(
+            shortCooldownSeconds <= 0 ? DefaultMissingPosterShortCooldownSeconds : shortCooldownSeconds,
+            30L,
+            7L * 24L * 60L * 60L);
+        var hardCooldown = Math.Clamp(
+            hardFailCooldownSeconds <= 0 ? DefaultMissingPosterHardFailCooldownSeconds : hardFailCooldownSeconds,
+            shortCooldown,
+            14L * 24L * 60L * 60L);
+
+        var shortCutoff = now - shortCooldown;
+        var hardCutoff = now - hardCooldown;
+
+        var rows = await conn.QueryAsync<long>(
+            new CommandDefinition(
+                """
+                WITH missing AS (
+                  SELECT
+                    releases.id as id,
+                    releases.published_at_ts as publishedAtTs,
+                    releases.poster_last_attempt_ts as lastAttemptTs,
+                    CASE
+                      WHEN releases.poster_last_error IS NULL OR releases.poster_last_error = '' THEN 0
+                      WHEN (
+                        (instr(lower(releases.poster_last_error), 'no ') > 0
+                         AND instr(lower(releases.poster_last_error), 'match') > 0)
+                        OR instr(lower(releases.poster_last_error), 'missing ') > 0
+                        OR instr(lower(releases.poster_last_error), 'release not found') > 0
+                        OR instr(lower(releases.poster_last_error), 'title_clean missing') > 0
+                      ) THEN 1
+                      ELSE 0
+                    END as isHardFail
+                  FROM releases
+                  LEFT JOIN media_entities me
+                    ON me.id = releases.entity_id
+                  WHERE (COALESCE(releases.poster_file, me.poster_file) IS NULL OR COALESCE(releases.poster_file, me.poster_file) = '')
+                )
+                SELECT id
+                FROM missing
+                WHERE (
+                  lastAttemptTs IS NULL
+                  OR (isHardFail = 0 AND lastAttemptTs <= @shortCutoff)
+                  OR (isHardFail = 1 AND lastAttemptTs <= @hardCutoff)
+                )
+                ORDER BY publishedAtTs DESC, id DESC
+                LIMIT @lim;
+                """,
+                new { shortCutoff, hardCutoff, lim },
+                cancellationToken: ct)).ConfigureAwait(false);
+
+        return rows.AsList();
+    }
+
+    public int GetMissingPosterCount()
+    {
+        using var conn = _db.Open();
+        return conn.ExecuteScalar<int>(
+            "SELECT COALESCE(missing, 0) FROM poster_stats WHERE singleton_id = 1;"
+        );
+    }
+
+    public sealed record PosterStats(int MissingTotal, int MissingActionable, long LastPosterChangeTs);
+    public sealed record MaterializedPosterStats(
+        int Total,
+        int Missing,
+        int Failed,
+        int Ok,
+        int MissingActionable,
+        long LastPosterChangeTs,
+        long UpdatedAtTs);
+    public readonly record struct PosterStatsWatermark(
+        long ReleasesCount,
+        long ReleasesMaxTs,
+        long MediaEntitiesCount,
+        long MediaEntitiesMaxTs);
+
+    public PosterStatsWatermark GetPosterStatsWatermark()
+    {
+        using var conn = _db.Open();
+        var releases = conn.QueryFirstOrDefault(
+            """
+            SELECT
+              COUNT(1) as total,
+              MAX(COALESCE(poster_updated_at_ts, poster_last_attempt_ts, created_at_ts, 0)) as maxTs
+            FROM releases;
+            """);
+        var releasesCount = releases is null ? 0L : Convert.ToInt64(releases.total ?? 0L);
+        var releasesMaxTs = releases is null ? 0L : Convert.ToInt64(releases.maxTs ?? 0L);
+
+        var hasMediaEntities = conn.ExecuteScalar<long>(
+            "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name='media_entities';") > 0;
+        if (!hasMediaEntities)
+            return new PosterStatsWatermark(releasesCount, releasesMaxTs, 0L, 0L);
+
+        var media = conn.QueryFirstOrDefault(
+            """
+            SELECT
+              COUNT(1) as total,
+              MAX(COALESCE(poster_updated_at_ts, updated_at_ts, created_at_ts, 0)) as maxTs
+            FROM media_entities;
+            """);
+        var mediaCount = media is null ? 0L : Convert.ToInt64(media.total ?? 0L);
+        var mediaMaxTs = media is null ? 0L : Convert.ToInt64(media.maxTs ?? 0L);
+
+        return new PosterStatsWatermark(releasesCount, releasesMaxTs, mediaCount, mediaMaxTs);
+    }
+
+    public void RefreshPosterStatsSnapshot(long nowTs, long shortCooldownSeconds, long longCooldownSeconds)
+    {
+        using var conn = _db.Open();
+        var shortCutoff = nowTs - shortCooldownSeconds;
+        var longCutoff = nowTs - longCooldownSeconds;
+
+        var row = conn.QueryFirstOrDefault(
+            """
+            SELECT
+              COUNT(1) as total,
+              SUM(
+                CASE
+                  WHEN (COALESCE(releases.poster_file, me.poster_file) IS NULL OR COALESCE(releases.poster_file, me.poster_file) = '')
+                  THEN 1
+                  ELSE 0
+                END
+              ) as missing,
+              SUM(
+                CASE
+                  WHEN (
+                    (COALESCE(releases.poster_file, me.poster_file) IS NULL OR COALESCE(releases.poster_file, me.poster_file) = '')
+                    AND (releases.poster_last_error IS NOT NULL AND releases.poster_last_error <> '')
+                  )
+                  THEN 1
+                  ELSE 0
+                END
+              ) as failed,
+              SUM(
+                CASE
+                  WHEN (COALESCE(releases.poster_file, me.poster_file) IS NOT NULL AND COALESCE(releases.poster_file, me.poster_file) <> '')
+                  THEN 1
+                  ELSE 0
+                END
+              ) as ok,
+              SUM(
+                CASE
+                  WHEN (
+                    (COALESCE(releases.poster_file, me.poster_file) IS NULL OR COALESCE(releases.poster_file, me.poster_file) = '')
+                    AND (
+                      releases.poster_last_attempt_ts IS NULL
+                      OR (
+                        (releases.poster_last_error IS NULL OR releases.poster_last_error = '')
+                        AND releases.poster_last_attempt_ts <= @shortCutoff
+                      )
+                      OR (
+                        (releases.poster_last_error IS NOT NULL AND releases.poster_last_error <> '')
+                        AND releases.poster_last_attempt_ts <= @longCutoff
+                      )
+                    )
+                  )
+                  THEN 1
+                  ELSE 0
+                END
+              ) as missingActionable,
+              MAX(COALESCE(releases.poster_updated_at_ts, me.poster_updated_at_ts, 0)) as lastPosterChangeTs
+            FROM releases
+            LEFT JOIN media_entities me
+              ON me.id = releases.entity_id;
+            """,
+            new { shortCutoff, longCutoff }
+        );
+
+        var total = row is null ? 0 : Convert.ToInt32(row.total ?? 0);
+        var missing = row is null ? 0 : Convert.ToInt32(row.missing ?? 0);
+        var failed = row is null ? 0 : Convert.ToInt32(row.failed ?? 0);
+        var ok = row is null ? 0 : Convert.ToInt32(row.ok ?? 0);
+        var missingActionable = row is null ? 0 : Convert.ToInt32(row.missingActionable ?? 0);
+        var lastPosterChangeTs = row is null ? 0 : Convert.ToInt64(row.lastPosterChangeTs ?? 0);
+
+        conn.Execute(
+            """
+            INSERT INTO poster_stats(
+              singleton_id,
+              total,
+              missing,
+              failed,
+              ok,
+              missing_actionable,
+              last_poster_change_ts,
+              updated_at_ts
+            )
+            VALUES (
+              1,
+              @total,
+              @missing,
+              @failed,
+              @ok,
+              @missingActionable,
+              @lastPosterChangeTs,
+              @updatedAtTs
+            )
+            ON CONFLICT(singleton_id) DO UPDATE SET
+              total = excluded.total,
+              missing = excluded.missing,
+              failed = excluded.failed,
+              ok = excluded.ok,
+              missing_actionable = excluded.missing_actionable,
+              last_poster_change_ts = excluded.last_poster_change_ts,
+              updated_at_ts = excluded.updated_at_ts;
+            """,
+            new
+            {
+                total,
+                missing,
+                failed,
+                ok,
+                missingActionable,
+                lastPosterChangeTs,
+                updatedAtTs = nowTs
+            }
+        );
+    }
+
+    public MaterializedPosterStats GetPosterStatsSnapshot()
+    {
+        using var conn = _db.Open();
+        var row = conn.QueryFirstOrDefault<MaterializedPosterStats>(
+            """
+            SELECT
+              total as Total,
+              missing as Missing,
+              failed as Failed,
+              ok as Ok,
+              missing_actionable as MissingActionable,
+              last_poster_change_ts as LastPosterChangeTs,
+              updated_at_ts as UpdatedAtTs
+            FROM poster_stats
+            WHERE singleton_id = 1
+            LIMIT 1;
+            """
+        );
+
+        return row ?? new MaterializedPosterStats(0, 0, 0, 0, 0, 0, 0);
+    }
+
+    public PosterStats GetPosterStats(long nowTs, long shortCooldownSeconds, long longCooldownSeconds)
+    {
+        var snapshot = GetPosterStatsSnapshot();
+        if (snapshot.UpdatedAtTs <= 0)
+        {
+            RefreshPosterStatsSnapshot(nowTs, shortCooldownSeconds, longCooldownSeconds);
+            snapshot = GetPosterStatsSnapshot();
+        }
+
+        return new PosterStats(snapshot.Missing, snapshot.MissingActionable, snapshot.LastPosterChangeTs);
+    }
+
+    public sealed class PosterStateRow
+    {
+        public long Id { get; set; }
+        public long? EntityId { get; set; }
+        public string? PosterFile { get; set; }
+        public long? PosterUpdatedAtTs { get; set; }
+        public long? PosterLastAttemptTs { get; set; }
+        public string? PosterLastError { get; set; }
+    }
+
+    public sealed class MissingExternalIdsSeedRow
+    {
+        public long ReleaseId { get; set; }
+        public long? EntityId { get; set; }
+        public int? TmdbId { get; set; }
+        public int? TvdbId { get; set; }
+    }
+
+    public sealed class RequestTmdbSeedRow
+    {
+        public long ReleaseId { get; set; }
+        public long? EntityId { get; set; }
+        public string? TitleClean { get; set; }
+        public int? Year { get; set; }
+        public string? MediaType { get; set; }
+        public int? RequestTmdbId { get; set; }
+        public int? TmdbId { get; set; }
+        public int? TvdbId { get; set; }
+    }
+
+    public sealed class MissingTmdbMetadataSeedRow
+    {
+        public long ReleaseId { get; set; }
+        public long? EntityId { get; set; }
+        public int TmdbId { get; set; }
+        public string MediaTypeNormalized { get; set; } = "";
+    }
+
+    public sealed class TmdbMetadataDonorRow
+    {
+        public long ReleaseId { get; set; }
+        public int TmdbId { get; set; }
+        public string MediaTypeNormalized { get; set; } = "";
+        public string? ExtProvider { get; set; }
+        public string? ExtProviderId { get; set; }
+        public string? ExtTitle { get; set; }
+        public string? ExtOverview { get; set; }
+        public string? ExtTagline { get; set; }
+        public string? ExtGenres { get; set; }
+        public string? ExtReleaseDate { get; set; }
+        public int? ExtRuntimeMinutes { get; set; }
+        public double? ExtRating { get; set; }
+        public int? ExtVotes { get; set; }
+        public string? ExtDirectors { get; set; }
+        public string? ExtWriters { get; set; }
+        public string? ExtCast { get; set; }
+        public long? ExtUpdatedAtTs { get; set; }
+        public string? ExtTitleHu { get; set; }
+        public string? ExtOverviewHu { get; set; }
+        public string? ExtTitleOriginal { get; set; }
+        public string? ExtImdbId { get; set; }
+    }
+
+    private sealed class TmdbRebindReleaseSeedRow
+    {
+        public long? EntityId { get; set; }
+        public string? MediaType { get; set; }
+        public string? UnifiedCategory { get; set; }
+    }
+
+    private sealed class TmdbRebindReleaseRow
+    {
+        public long ReleaseId { get; set; }
+        public long EntityId { get; set; }
+    }
+
+    private sealed class TmdbRebindGroupRow
+    {
+        public int TmdbId { get; set; }
+        public string MediaTypeNormalized { get; set; } = "";
+        public int DistinctEntityCount { get; set; }
+    }
+
+    public List<PosterStateRow> GetPosterStateByReleaseIds(IEnumerable<long> releaseIds)
+    {
+        if (releaseIds is null) return new List<PosterStateRow>();
+        var ids = releaseIds.Distinct().ToArray();
+        if (ids.Length == 0) return new List<PosterStateRow>();
+
+        using var conn = _db.Open();
+        return conn.Query<PosterStateRow>(
+            """
+            SELECT
+              releases.id as Id,
+              releases.entity_id as EntityId,
+              COALESCE(releases.poster_file, me.poster_file) as PosterFile,
+              COALESCE(releases.poster_updated_at_ts, me.poster_updated_at_ts, 0) as PosterUpdatedAtTs,
+              releases.poster_last_attempt_ts as PosterLastAttemptTs,
+              releases.poster_last_error as PosterLastError
+            FROM releases
+            LEFT JOIN media_entities me
+              ON me.id = releases.entity_id
+            WHERE releases.id IN @ids;
+            """,
+            new { ids }
+        ).AsList();
+    }
+
+    public List<MissingExternalIdsSeedRow> GetSeriesMissingTmdbWithTvdb(int limit)
+    {
+        using var conn = _db.Open();
+        var lim = Math.Clamp(limit <= 0 ? 200 : limit, 1, 5000);
+        return conn.Query<MissingExternalIdsSeedRow>(
+            """
+            SELECT
+              r.id as ReleaseId,
+              r.entity_id as EntityId,
+              CAST(COALESCE(me.tmdb_id, r.tmdb_id) AS INTEGER) as TmdbId,
+              CAST(COALESCE(me.tvdb_id, r.tvdb_id) AS INTEGER) as TvdbId
+            FROM releases r
+            LEFT JOIN media_entities me
+              ON me.id = r.entity_id
+            WHERE lower(COALESCE(r.media_type, '')) = 'series'
+              AND IFNULL(COALESCE(me.tmdb_id, r.tmdb_id), 0) <= 0
+              AND IFNULL(COALESCE(me.tvdb_id, r.tvdb_id), 0) > 0
+            ORDER BY COALESCE(me.updated_at_ts, r.poster_updated_at_ts, r.id) DESC, r.id DESC
+            LIMIT @lim;
+            """,
+            new { lim }
+        ).AsList();
+    }
+
+    public RequestTmdbSeedRow? GetRequestTmdbSeed(long releaseId)
+    {
+        using var conn = _db.Open();
+        return conn.QueryFirstOrDefault<RequestTmdbSeedRow>(
+            """
+            SELECT
+              r.id as ReleaseId,
+              r.entity_id as EntityId,
+              r.title_clean as TitleClean,
+              r.year as Year,
+              lower(COALESCE(r.media_type, '')) as MediaType,
+              CAST(me.request_tmdb_id AS INTEGER) as RequestTmdbId,
+              CAST(COALESCE(me.tmdb_id, r.tmdb_id) AS INTEGER) as TmdbId,
+              CAST(COALESCE(me.tvdb_id, r.tvdb_id) AS INTEGER) as TvdbId
+            FROM releases r
+            LEFT JOIN media_entities me
+              ON me.id = r.entity_id
+            WHERE r.id = @releaseId
+            LIMIT 1;
+            """,
+            new { releaseId }
+        );
+    }
+
+    public List<RequestTmdbSeedRow> GetSeriesMissingRequestTmdb(int limit)
+    {
+        using var conn = _db.Open();
+        var lim = Math.Clamp(limit <= 0 ? 200 : limit, 1, 5000);
+        return conn.Query<RequestTmdbSeedRow>(
+            """
+            SELECT
+              r.id as ReleaseId,
+              r.entity_id as EntityId,
+              r.title_clean as TitleClean,
+              r.year as Year,
+              lower(COALESCE(r.media_type, '')) as MediaType,
+              CAST(me.request_tmdb_id AS INTEGER) as RequestTmdbId,
+              CAST(COALESCE(me.tmdb_id, r.tmdb_id) AS INTEGER) as TmdbId,
+              CAST(COALESCE(me.tvdb_id, r.tvdb_id) AS INTEGER) as TvdbId
+            FROM releases r
+            LEFT JOIN media_entities me
+              ON me.id = r.entity_id
+            WHERE lower(COALESCE(r.media_type, '')) = 'series'
+              AND IFNULL(me.request_tmdb_id, 0) <= 0
+              AND (
+                IFNULL(COALESCE(me.tmdb_id, r.tmdb_id), 0) > 0
+                OR IFNULL(COALESCE(me.tvdb_id, r.tvdb_id), 0) > 0
+                OR (r.title_clean IS NOT NULL AND r.title_clean <> '')
+              )
+            ORDER BY COALESCE(me.updated_at_ts, r.poster_updated_at_ts, r.id) DESC, r.id DESC
+            LIMIT @lim;
+            """,
+            new { lim }
+        ).AsList();
+    }
+
+    public List<MissingExternalIdsSeedRow> GetSeriesMissingTvdbWithTmdb(int limit)
+    {
+        using var conn = _db.Open();
+        var lim = Math.Clamp(limit <= 0 ? 200 : limit, 1, 5000);
+        return conn.Query<MissingExternalIdsSeedRow>(
+            """
+            SELECT
+              r.id as ReleaseId,
+              r.entity_id as EntityId,
+              CAST(COALESCE(me.tmdb_id, r.tmdb_id) AS INTEGER) as TmdbId,
+              CAST(COALESCE(me.tvdb_id, r.tvdb_id) AS INTEGER) as TvdbId
+            FROM releases r
+            LEFT JOIN media_entities me
+              ON me.id = r.entity_id
+            WHERE lower(COALESCE(r.media_type, '')) = 'series'
+              AND IFNULL(COALESCE(me.tvdb_id, r.tvdb_id), 0) <= 0
+              AND IFNULL(COALESCE(me.tmdb_id, r.tmdb_id), 0) > 0
+            ORDER BY COALESCE(me.updated_at_ts, r.poster_updated_at_ts, r.id) DESC, r.id DESC
+            LIMIT @lim;
+            """,
+            new { lim }
+        ).AsList();
+    }
+
+    public List<MissingTmdbMetadataSeedRow> GetTmdbMetadataMissingCandidates(int limit)
+    {
+        using var conn = _db.Open();
+        var lim = Math.Clamp(limit <= 0 ? 200 : limit, 1, 5000);
+        return conn.Query<MissingTmdbMetadataSeedRow>(
+            """
+            WITH base AS (
+              SELECT
+                r.id as ReleaseId,
+                r.entity_id as EntityId,
+                CAST(COALESCE(me.tmdb_id, r.tmdb_id) AS INTEGER) as TmdbId,
+                CASE
+                  WHEN lower(trim(COALESCE(r.media_type, ''))) IN ('series', 'tv', 'show') THEN 'series'
+                  WHEN lower(trim(COALESCE(r.media_type, ''))) IN ('movie', 'film') THEN 'movie'
+                  ELSE NULL
+                END as MediaTypeNormalized,
+                COALESCE(r.poster_file, me.poster_file) as PosterFile,
+                COALESCE(me.ext_updated_at_ts, r.ext_updated_at_ts) as ExtUpdatedAtTs
+              FROM releases r
+              LEFT JOIN media_entities me
+                ON me.id = r.entity_id
+            )
+            SELECT
+              ReleaseId,
+              EntityId,
+              TmdbId,
+              MediaTypeNormalized
+            FROM base
+            WHERE MediaTypeNormalized IS NOT NULL
+              AND IFNULL(TmdbId, 0) > 0
+              AND PosterFile IS NOT NULL
+              AND PosterFile <> ''
+              AND IFNULL(ExtUpdatedAtTs, 0) <= 0
+            ORDER BY ReleaseId DESC
+            LIMIT @lim;
+            """,
+            new { lim }
+        ).AsList();
+    }
+
+    public List<TmdbMetadataDonorRow> GetTmdbMetadataDonorsByTmdbIds(IEnumerable<int> tmdbIds)
+    {
+        if (tmdbIds is null) return new List<TmdbMetadataDonorRow>();
+        var ids = tmdbIds
+            .Where(id => id > 0)
+            .Distinct()
+            .ToArray();
+        if (ids.Length == 0) return new List<TmdbMetadataDonorRow>();
+
+        using var conn = _db.Open();
+        return conn.Query<TmdbMetadataDonorRow>(
+            """
+            WITH base AS (
+              SELECT
+                r.id as ReleaseId,
+                CAST(COALESCE(me.tmdb_id, r.tmdb_id) AS INTEGER) as TmdbId,
+                CASE
+                  WHEN lower(trim(COALESCE(r.media_type, ''))) IN ('series', 'tv', 'show') THEN 'series'
+                  WHEN lower(trim(COALESCE(r.media_type, ''))) IN ('movie', 'film') THEN 'movie'
+                  ELSE NULL
+                END as MediaTypeNormalized,
+                lower(trim(COALESCE(me.ext_provider, r.ext_provider, ''))) as ExtProvider,
+                COALESCE(me.ext_provider_id, r.ext_provider_id) as ExtProviderId,
+                COALESCE(me.ext_title, r.ext_title) as ExtTitle,
+                COALESCE(me.ext_title_hu, r.ext_title_hu) as ExtTitleHu,
+                COALESCE(me.ext_overview_hu, r.ext_overview_hu) as ExtOverviewHu,
+                COALESCE(me.ext_title_original, r.ext_title_original) as ExtTitleOriginal,
+                COALESCE(me.ext_imdb_id, r.ext_imdb_id) as ExtImdbId,
+                COALESCE(me.ext_overview, r.ext_overview) as ExtOverview,
+                COALESCE(me.ext_tagline, r.ext_tagline) as ExtTagline,
+                COALESCE(me.ext_genres, r.ext_genres) as ExtGenres,
+                COALESCE(me.ext_release_date, r.ext_release_date) as ExtReleaseDate,
+                COALESCE(me.ext_runtime_minutes, r.ext_runtime_minutes) as ExtRuntimeMinutes,
+                COALESCE(me.ext_rating, r.ext_rating) as ExtRating,
+                COALESCE(me.ext_votes, r.ext_votes) as ExtVotes,
+                COALESCE(me.ext_directors, r.ext_directors) as ExtDirectors,
+                COALESCE(me.ext_writers, r.ext_writers) as ExtWriters,
+                COALESCE(me.ext_cast, r.ext_cast) as ExtCast,
+                COALESCE(me.ext_updated_at_ts, r.ext_updated_at_ts) as ExtUpdatedAtTs
+              FROM releases r
+              LEFT JOIN media_entities me
+                ON me.id = r.entity_id
+            )
+            SELECT
+              ReleaseId,
+              TmdbId,
+              MediaTypeNormalized,
+              ExtProvider,
+              ExtProviderId,
+              ExtTitle,
+              ExtOverview,
+              ExtTagline,
+              ExtGenres,
+              ExtReleaseDate,
+              ExtRuntimeMinutes,
+              ExtRating,
+              ExtVotes,
+              ExtDirectors,
+              ExtWriters,
+              ExtCast,
+              ExtUpdatedAtTs
+            FROM base
+            WHERE TmdbId IN @ids
+              AND MediaTypeNormalized IS NOT NULL
+              AND ExtProvider = 'tmdb'
+              AND IFNULL(ExtUpdatedAtTs, 0) > 0
+            ORDER BY TmdbId ASC, MediaTypeNormalized ASC, ExtUpdatedAtTs DESC, ReleaseId DESC;
+            """,
+            new { ids }
+        ).AsList();
+    }
+
+    public int BackfillEntityPosters(int limit)
+    {
+        using var conn = _db.Open();
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var lim = Math.Clamp(limit <= 0 ? 200 : limit, 1, 2000);
+
+        return conn.Execute(
+            """
+            UPDATE media_entities
+            SET poster_file = (
+                  SELECT r.poster_file
+                  FROM releases r
+                  WHERE r.entity_id = media_entities.id
+                    AND r.poster_file IS NOT NULL
+                    AND r.poster_file <> ''
+                  ORDER BY r.poster_updated_at_ts DESC, r.id DESC
+                  LIMIT 1
+              ),
+                poster_updated_at_ts = (
+                  SELECT r.poster_updated_at_ts
+                  FROM releases r
+                  WHERE r.entity_id = media_entities.id
+                    AND r.poster_file IS NOT NULL
+                    AND r.poster_file <> ''
+                  ORDER BY r.poster_updated_at_ts DESC, r.id DESC
+                  LIMIT 1
+              ),
+                updated_at_ts = @now
+            WHERE (poster_file IS NULL OR poster_file = '')
+              AND EXISTS (
+                  SELECT 1
+                  FROM releases r
+                  WHERE r.entity_id = media_entities.id
+                    AND r.poster_file IS NOT NULL
+                    AND r.poster_file <> ''
+              )
+              AND id IN (
+                  SELECT id
+                  FROM media_entities
+                  WHERE (poster_file IS NULL OR poster_file = '')
+                  LIMIT @lim
+              );
+            """,
+            new { now, lim }
+        );
+    }
+
+    public int BackfillEntityExternalIds(int limit)
+    {
+        using var conn = _db.Open();
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var lim = Math.Clamp(limit <= 0 ? 200 : limit, 1, 2000);
+
+        return conn.Execute(
+            """
+            UPDATE media_entities
+            SET tmdb_id = COALESCE(tmdb_id, (
+                    SELECT r.tmdb_id
+                    FROM releases r
+                    WHERE r.entity_id = media_entities.id
+                      AND r.tmdb_id IS NOT NULL
+                      AND r.tmdb_id > 0
+                    ORDER BY COALESCE(r.ext_updated_at_ts, r.poster_updated_at_ts, 0) DESC, r.id DESC
+                    LIMIT 1
+                )),
+                tvdb_id = COALESCE(tvdb_id, (
+                    SELECT r.tvdb_id
+                    FROM releases r
+                    WHERE r.entity_id = media_entities.id
+                      AND r.tvdb_id IS NOT NULL
+                      AND r.tvdb_id > 0
+                    ORDER BY COALESCE(r.ext_updated_at_ts, r.poster_updated_at_ts, 0) DESC, r.id DESC
+                    LIMIT 1
+                )),
+                updated_at_ts = @now
+            WHERE (tmdb_id IS NULL OR tmdb_id <= 0 OR tvdb_id IS NULL OR tvdb_id <= 0)
+              AND id IN (
+                  SELECT id
+                  FROM media_entities
+                  WHERE (tmdb_id IS NULL OR tmdb_id <= 0 OR tvdb_id IS NULL OR tvdb_id <= 0)
+                  LIMIT @lim
+              )
+              AND (
+                  EXISTS (
+                      SELECT 1
+                      FROM releases r
+                      WHERE r.entity_id = media_entities.id
+                        AND r.tmdb_id IS NOT NULL
+                        AND r.tmdb_id > 0
+                  )
+                  OR EXISTS (
+                      SELECT 1
+                      FROM releases r
+                      WHERE r.entity_id = media_entities.id
+                        AND r.tvdb_id IS NOT NULL
+                        AND r.tvdb_id > 0
+                  )
+              );
+            """,
+            new { now, lim }
+        );
+    }
+
+    public (int total, int done, int pending) GetPosterProgressByIds(IEnumerable<long> ids, long startedAtTs)
+    {
+        if (ids is null) return (0, 0, 0);
+        var idList = ids.Distinct().ToArray();
+        if (idList.Length == 0) return (0, 0, 0);
+
+        using var conn = _db.Open();
+        var row = conn.QueryFirstOrDefault(
+            """
+            SELECT
+              COUNT(1) as total,
+              SUM(
+                CASE
+                  WHEN (
+                    (COALESCE(releases.poster_file, me.poster_file) IS NOT NULL
+                     AND COALESCE(releases.poster_file, me.poster_file) <> ''
+                     AND COALESCE(releases.poster_updated_at_ts, me.poster_updated_at_ts, 0) >= @startedAt)
+                    OR (poster_last_attempt_ts IS NOT NULL AND poster_last_attempt_ts >= @startedAt)
+                  )
+                  THEN 1
+                  ELSE 0
+                END
+              ) as done
+            FROM releases
+            LEFT JOIN media_entities me
+              ON me.id = releases.entity_id
+            WHERE releases.id IN @ids;
+            """,
+            new { ids = idList, startedAt = startedAtTs }
+        );
+
+        var total = row is null ? 0 : Convert.ToInt32(row.total ?? 0);
+        var done = row is null ? 0 : Convert.ToInt32(row.done ?? 0);
+        var pending = Math.Max(0, total - done);
+        return (total, done, pending);
+    }
+
+    public string? GetDownloadUrl(long releaseId)
+    {
+        using var conn = _db.Open();
+        return conn.ExecuteScalar<string?>(
+            "SELECT download_url FROM releases WHERE id = @id",
+            new { id = releaseId }
+        );
+    }
+
+    public Dictionary<long, long?> GetEntityIdsForReleaseIds(IEnumerable<long> releaseIds)
+    {
+        if (releaseIds is null) return new Dictionary<long, long?>();
+        var ids = releaseIds.Distinct().ToArray();
+        if (ids.Length == 0) return new Dictionary<long, long?>();
+
+        using var conn = _db.Open();
+        var rows = conn.Query<(long ReleaseId, long? EntityId)>(
+            """
+            SELECT id as ReleaseId,
+                   entity_id as EntityId
+            FROM releases
+            WHERE id IN @ids;
+            """,
+            new { ids }
+        );
+
+        return rows.ToDictionary(r => r.ReleaseId, r => r.EntityId);
+    }
+
+    private sealed class RenameSeedRow
+    {
+        public long Id { get; set; }
+        public long SourceId { get; set; }
+        public string? UnifiedCategory { get; set; }
+        public int? CategoryId { get; set; }
+        public int? StdCategoryId { get; set; }
+        public int? SpecCategoryId { get; set; }
+        public string? CategoryIds { get; set; }
+    }
+
+    public sealed class RenameRebindResult
+    {
+        public long ReleaseId { get; set; }
+        public long? EntityId { get; set; }
+        public string? Title { get; set; }
+        public string? TitleClean { get; set; }
+        public int? Year { get; set; }
+        public int? Season { get; set; }
+        public int? Episode { get; set; }
+        public string? Resolution { get; set; }
+        public string? Source { get; set; }
+        public string? Codec { get; set; }
+        public string? ReleaseGroup { get; set; }
+        public string? MediaType { get; set; }
+        public string? UnifiedCategory { get; set; }
+        public string? PosterFile { get; set; }
+        public string? EntityPosterFile { get; set; }
+        public long? PosterUpdatedAtTs { get; set; }
+        public int? TmdbId { get; set; }
+        public int? TvdbId { get; set; }
+    }
+
+    public dynamic? RenameAndRebindEntity(long id, string newTitle)
+    {
+        using var conn = _db.Open();
+        using var tx = conn.BeginTransaction();
+
+        var seed = conn.QueryFirstOrDefault<RenameSeedRow>(
+            """
+            SELECT
+              id as Id,
+              source_id as SourceId,
+              unified_category as UnifiedCategory,
+              category_id as CategoryId,
+              std_category_id as StdCategoryId,
+              spec_category_id as SpecCategoryId,
+              category_ids as CategoryIds
+            FROM releases
+            WHERE id = @id;
+            """,
+            new { id },
+            tx
+        );
+
+        if (seed is null) return null;
+
+        var unifiedCategory = ResolveUnifiedCategory(seed);
+        var unifiedCategoryText = unifiedCategory.ToString();
+        var parsed = _parser.Parse(newTitle, unifiedCategory);
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+        conn.Execute(
+            """
+            UPDATE releases
+            SET title = @title,
+                title_manual_override = 1,
+                title_clean = @titleClean,
+                year = @year,
+                season = @season,
+                episode = @episode,
+                resolution = @resolution,
+                source = @source,
+                codec = @codec,
+                release_group = @releaseGroup,
+                media_type = @mediaType,
+                unified_category = @unifiedCategory
+            WHERE id = @id;
+
+            INSERT INTO media_entities(
+              unified_category,
+              title_clean,
+              year,
+              created_at_ts,
+              updated_at_ts
+            )
+            VALUES(
+              @unifiedCategory,
+              @titleClean,
+              @year,
+              @now,
+              @now
+            )
+            ON CONFLICT(unified_category, title_clean, IFNULL(year, -1)) DO UPDATE SET
+              updated_at_ts = excluded.updated_at_ts;
+
+            UPDATE releases
+            SET entity_id = (
+                SELECT me.id
+                FROM media_entities me
+                WHERE me.unified_category = @unifiedCategory
+                  AND me.title_clean = @titleClean
+                  AND IFNULL(me.year, -1) = IFNULL(@year, -1)
+                LIMIT 1
+            )
+            WHERE id = @id;
+            """,
+            new
+            {
+                id,
+                title = newTitle,
+                titleClean = parsed.TitleClean,
+                year = parsed.Year,
+                season = parsed.Season,
+                episode = parsed.Episode,
+                resolution = parsed.Resolution,
+                source = parsed.Source,
+                codec = parsed.Codec,
+                releaseGroup = parsed.ReleaseGroup,
+                mediaType = parsed.MediaType,
+                unifiedCategory = unifiedCategoryText,
+                now
+            },
+            tx
+        );
+
+        var result = conn.QueryFirstOrDefault<RenameRebindResult>(
+            """
+            SELECT
+              r.id as ReleaseId,
+              r.entity_id as EntityId,
+              r.title as Title,
+              r.title_clean as TitleClean,
+              r.year as Year,
+              r.season as Season,
+              r.episode as Episode,
+              r.resolution as Resolution,
+              r.source as Source,
+              r.codec as Codec,
+              r.release_group as ReleaseGroup,
+              r.media_type as MediaType,
+              r.unified_category as UnifiedCategory,
+              COALESCE(r.poster_file, me.poster_file) as PosterFile,
+              me.poster_file as EntityPosterFile,
+              COALESCE(r.poster_updated_at_ts, me.poster_updated_at_ts, 0) as PosterUpdatedAtTs,
+              CAST(COALESCE(me.tmdb_id, r.tmdb_id) AS INTEGER) as TmdbId,
+              CAST(COALESCE(me.tvdb_id, r.tvdb_id) AS INTEGER) as TvdbId
+            FROM releases r
+            LEFT JOIN media_entities me
+              ON me.id = r.entity_id
+            WHERE r.id = @id;
+            """,
+            new { id },
+            tx
+        );
+
+        tx.Commit();
+        return result;
+    }
+
+    private UnifiedCategory ResolveUnifiedCategory(RenameSeedRow seed)
+    {
+        var categoryIds   = ParseCategoryIds(seed.CategoryIds, seed.CategoryId);
+        var normalizedIds = CategoryNormalizationService.NormalizeCategoryIds(categoryIds).ToList();
+        var (stdId, specId) = UnifiedCategoryResolver.ResolveStdSpec(
+            seed.StdCategoryId, seed.SpecCategoryId, normalizedIds);
+
+        // Pipeline complet : même logique que UpsertMany (sans catMap — pas de source_categories ici)
+        var fromResolver = _resolver.Resolve(null, stdId, specId, normalizedIds);
+        if (fromResolver != UnifiedCategory.Autre)
+            return fromResolver;
+
+        // Si le resolver ne trouve rien, appliquer l'override std sur la catégorie stockée
+        if (UnifiedCategoryMappings.TryParse(seed.UnifiedCategory, out var existing) &&
+            existing != UnifiedCategory.Autre)
+        {
+            return UnifiedCategoryResolver.ApplyStdOverride(existing, stdId);
+        }
+
+        return UnifiedCategory.Autre;
+    }
+
+    private static List<int> ParseCategoryIds(string? csv, int? primaryId)
+    {
+        var ids = new List<int>();
+        if (primaryId.HasValue) ids.Add(primaryId.Value);
+        if (!string.IsNullOrWhiteSpace(csv))
+        {
+            foreach (var part in csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (int.TryParse(part, out var id))
+                    ids.Add(id);
+            }
+        }
+
+        return ids.Distinct().ToList();
+    }
+    public ReleaseForPoster? GetForPoster(long id)
+    {
+        using var conn = _db.Open();
+        return conn.QueryFirstOrDefault<ReleaseForPoster>(
+            """
+            SELECT
+                releases.id as Id,
+                releases.source_id as SourceId,
+                releases.entity_id as EntityId,
+                releases.title as Title,
+                releases.title_clean as TitleClean,
+                releases.year as Year,
+                season as Season,
+                episode as Episode,
+                category_id as CategoryId,
+                sc.name as CategoryName,
+                std_category_id as StdCategoryId,
+                spec_category_id as SpecCategoryId,
+                releases.unified_category as UnifiedCategory,
+                category_ids as CategoryIds,
+                media_type as MediaType,
+                COALESCE(me.tmdb_id, releases.tmdb_id) as TmdbId,
+                COALESCE(me.tvdb_id, releases.tvdb_id) as TvdbId,
+                poster_path as PosterPath,
+                COALESCE(releases.poster_file, me.poster_file) as PosterFile,
+                poster_provider as PosterProvider,
+                poster_provider_id as PosterProviderId,
+                releases.poster_key as PosterKey,
+                COALESCE(releases.poster_store_dir, me.poster_store_dir) as PosterStoreDir,
+                poster_lang as PosterLang,
+                poster_size as PosterSize,
+                poster_hash as PosterHash,
+                COALESCE(releases.poster_updated_at_ts, me.poster_updated_at_ts, 0) as PosterUpdatedAtTs,
+                poster_last_attempt_ts as PosterLastAttemptTs,
+                poster_last_error as PosterLastError,
+                COALESCE(me.ext_provider, releases.ext_provider) as ExtProvider,
+                COALESCE(me.ext_provider_id, releases.ext_provider_id) as ExtProviderId,
+                COALESCE(me.ext_title, releases.ext_title) as ExtTitle,
+                COALESCE(me.ext_overview, releases.ext_overview) as ExtOverview,
+                COALESCE(me.ext_tagline, releases.ext_tagline) as ExtTagline,
+                COALESCE(me.ext_genres, releases.ext_genres) as ExtGenres,
+                COALESCE(me.ext_release_date, releases.ext_release_date) as ExtReleaseDate,
+                COALESCE(me.ext_runtime_minutes, releases.ext_runtime_minutes) as ExtRuntimeMinutes,
+                COALESCE(me.ext_rating, releases.ext_rating) as ExtRating,
+                COALESCE(me.ext_votes, releases.ext_votes) as ExtVotes,
+                COALESCE(me.ext_updated_at_ts, releases.ext_updated_at_ts) as ExtUpdatedAtTs,
+                COALESCE(me.ext_directors, releases.ext_directors) as ExtDirectors,
+                COALESCE(me.ext_writers, releases.ext_writers) as ExtWriters,
+                COALESCE(me.ext_cast, releases.ext_cast) as ExtCast
+            FROM releases
+            LEFT JOIN media_entities me
+              ON me.id = releases.entity_id
+            LEFT JOIN source_categories sc
+              ON sc.source_id = releases.source_id AND sc.cat_id = releases.category_id
+            WHERE releases.id = @id;
+            """,
+            new { id }
+        );
+    }
+
+
+    public void SavePoster(long id, int? tmdbId, string? posterPath, string posterFile)
+    {
+        if (string.IsNullOrWhiteSpace(posterFile))
+            throw new ArgumentException("posterFile cannot be null or empty", nameof(posterFile));
+
+        using var conn = _db.Open();
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+        var entityId = conn.ExecuteScalar<long?>(
+            "SELECT entity_id FROM releases WHERE id = @id",
+            new { id }
+        );
+
+        using var tx = conn.BeginTransaction();
+        try
+        {
+            if (entityId.HasValue && entityId.Value > 0)
+            {
+                conn.Execute(
+                    """
+                    UPDATE media_entities
+                    SET tmdb_id = COALESCE(@tmdbId, tmdb_id),
+                        poster_file = @posterFile,
+                        poster_updated_at_ts = @ts,
+                        updated_at_ts = @ts
+                    WHERE id = @entityId;
+                    """,
+                    new { entityId, tmdbId, posterFile, ts = now },
+                    tx
+                );
+            }
+
+            conn.Execute(
+                """
+                UPDATE releases
+                SET tmdb_id = COALESCE(@tmdbId, tmdb_id),
+                    poster_path = COALESCE(@posterPath, poster_path),
+                    poster_file = @posterFile,
+                    poster_updated_at_ts = @ts
+                WHERE id = @id;
+                """,
+                new { id, tmdbId, posterPath, posterFile, ts = now },
+                tx
+            );
+
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    public PosterMatch? GetPosterForTitleClean(long excludeId, string titleClean, string? normalizedTitle, string? mediaType, int? year)
+    {
+        using var conn = _db.Open();
+
+        const string selectColumns = @"
+SELECT r.id as Id,
+       r.entity_id as EntityId,
+       COALESCE(me.tmdb_id, r.tmdb_id) as TmdbId,
+       COALESCE(me.tvdb_id, r.tvdb_id) as TvdbId,
+       r.poster_path as PosterPath,
+       COALESCE(r.poster_file, me.poster_file) as PosterFile,
+       r.poster_provider as PosterProvider,
+       r.poster_provider_id as PosterProviderId,
+       r.poster_lang as PosterLang,
+       r.poster_size as PosterSize,
+       r.poster_hash as PosterHash,
+       COALESCE(me.ext_provider, r.ext_provider) as ExtProvider,
+       COALESCE(me.ext_provider_id, r.ext_provider_id) as ExtProviderId,
+       COALESCE(me.ext_title, r.ext_title) as ExtTitle,
+       COALESCE(me.ext_overview, r.ext_overview) as ExtOverview,
+       COALESCE(me.ext_tagline, r.ext_tagline) as ExtTagline,
+       COALESCE(me.ext_genres, r.ext_genres) as ExtGenres,
+       COALESCE(me.ext_release_date, r.ext_release_date) as ExtReleaseDate,
+       COALESCE(me.ext_runtime_minutes, r.ext_runtime_minutes) as ExtRuntimeMinutes,
+       COALESCE(me.ext_rating, r.ext_rating) as ExtRating,
+       COALESCE(me.ext_votes, r.ext_votes) as ExtVotes,
+       COALESCE(me.ext_updated_at_ts, r.ext_updated_at_ts) as ExtUpdatedAtTs,
+       COALESCE(me.ext_directors, r.ext_directors) as ExtDirectors,
+       COALESCE(me.ext_writers, r.ext_writers) as ExtWriters,
+       COALESCE(me.ext_cast, r.ext_cast) as ExtCast
+FROM releases r
+LEFT JOIN media_entities me
+  ON me.id = r.entity_id
+";
+
+        // 1. Essai exact: même titre + même année + même type
+        var result = conn.QueryFirstOrDefault<PosterMatch>(
+            selectColumns + """
+            WHERE r.id <> @id
+              AND r.title_clean IS NOT NULL
+              AND (
+                    lower(r.title_clean) = lower(@title)
+                    OR (@altTitle IS NOT NULL AND lower(r.title_clean) = lower(@altTitle))
+                  )
+              AND (@mediaType IS NULL OR lower(r.media_type) = lower(@mediaType))
+              AND (@year IS NULL OR r.year = @year)
+              AND COALESCE(r.poster_file, me.poster_file) IS NOT NULL
+              AND COALESCE(r.poster_file, me.poster_file) <> ''
+            ORDER BY COALESCE(r.poster_updated_at_ts, me.poster_updated_at_ts) DESC, r.id DESC
+            LIMIT 1;
+            """,
+            new { id = excludeId, title = titleClean, altTitle = normalizedTitle, mediaType, year }
+        );
+
+        if (result is not null) return result;
+
+        // 2. Fallback: tolérance ±1 an sur l'année
+        if (year.HasValue)
+        {
+            result = conn.QueryFirstOrDefault<PosterMatch>(
+                selectColumns + """
+                WHERE r.id <> @id
+                  AND r.title_clean IS NOT NULL
+                  AND (
+                        lower(r.title_clean) = lower(@title)
+                        OR (@altTitle IS NOT NULL AND lower(r.title_clean) = lower(@altTitle))
+                      )
+                  AND (@mediaType IS NULL OR lower(r.media_type) = lower(@mediaType))
+                  AND r.year BETWEEN @yearMin AND @yearMax
+                  AND COALESCE(r.poster_file, me.poster_file) IS NOT NULL
+                  AND COALESCE(r.poster_file, me.poster_file) <> ''
+                ORDER BY ABS(r.year - @year), COALESCE(r.poster_updated_at_ts, me.poster_updated_at_ts) DESC, r.id DESC
+                LIMIT 1;
+                """,
+                new { id = excludeId, title = titleClean, altTitle = normalizedTitle, mediaType, year, yearMin = year - 1, yearMax = year + 1 }
+            );
+
+            if (result is not null) return result;
+        }
+
+        // 3. Fallback: même titre sans contrainte d'année (si année fournie)
+        if (year.HasValue)
+        {
+            result = conn.QueryFirstOrDefault<PosterMatch>(
+                selectColumns + """
+                WHERE r.id <> @id
+                  AND r.title_clean IS NOT NULL
+                  AND (
+                        lower(r.title_clean) = lower(@title)
+                        OR (@altTitle IS NOT NULL AND lower(r.title_clean) = lower(@altTitle))
+                      )
+                  AND (@mediaType IS NULL OR lower(r.media_type) = lower(@mediaType))
+                  AND COALESCE(r.poster_file, me.poster_file) IS NOT NULL
+                  AND COALESCE(r.poster_file, me.poster_file) <> ''
+                ORDER BY COALESCE(r.poster_updated_at_ts, me.poster_updated_at_ts) DESC, r.id DESC
+                LIMIT 1;
+                """,
+                new { id = excludeId, title = titleClean, altTitle = normalizedTitle, mediaType }
+            );
+        }
+
+        return result;
+    }
+
+    public void SaveTmdbId(long id, int tmdbId)
+    {
+        if (tmdbId <= 0) return;
+
+        using var conn = _db.Open();
+        using var tx = conn.BeginTransaction();
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var seed = conn.QueryFirstOrDefault<TmdbRebindReleaseSeedRow>(
+            """
+            SELECT
+              entity_id as EntityId,
+              media_type as MediaType,
+              unified_category as UnifiedCategory
+            FROM releases
+            WHERE id = @id;
+            """,
+            new { id },
+            tx
+        );
+        if (seed is null)
+        {
+            tx.Commit();
+            return;
+        }
+
+        var currentEntityId = seed.EntityId;
+        if (currentEntityId.HasValue && currentEntityId.Value > 0)
+        {
+            conn.Execute(
+                """
+                UPDATE media_entities
+                SET tmdb_id = COALESCE(@tmdbId, tmdb_id),
+                    updated_at_ts = @ts
+                WHERE id = @entityId;
+                """,
+                new { entityId = currentEntityId.Value, tmdbId, ts = now },
+                tx
+            );
+        }
+
+        conn.Execute(
+            """
+            UPDATE releases
+            SET tmdb_id = COALESCE(@tmdbId, tmdb_id)
+            WHERE id = @id;
+            """,
+            new { id, tmdbId },
+            tx
+        );
+
+        _ = TryRebindReleaseToCanonicalTmdbEntity(
+            conn,
+            tx,
+            id,
+            tmdbId,
+            currentEntityId,
+            seed.MediaType,
+            seed.UnifiedCategory);
+
+        tx.Commit();
+    }
+
+    private bool TryRebindReleaseToCanonicalTmdbEntity(
+        IDbConnection conn,
+        IDbTransaction tx,
+        long releaseId,
+        int tmdbId,
+        long? currentEntityId,
+        string? mediaType,
+        string? unifiedCategory)
+    {
+        if (releaseId <= 0 || tmdbId <= 0 || !currentEntityId.HasValue || currentEntityId.Value <= 0)
+            return false;
+
+        var mediaTypeNormalized = NormalizeMediaTypeForTmdb(mediaType, unifiedCategory);
+        if (mediaTypeNormalized is null)
+            return false;
+
+        var canonicalEntityId = GetCanonicalTmdbEntityId(conn, tx, tmdbId, mediaTypeNormalized);
+        if (!canonicalEntityId.HasValue || canonicalEntityId.Value <= 0 || canonicalEntityId.Value == currentEntityId.Value)
+            return false;
+
+        var rebound = conn.Execute(
+            """
+            UPDATE releases
+            SET entity_id = @canonicalEntityId
+            WHERE id = @releaseId
+              AND entity_id = @currentEntityId;
+            """,
+            new
+            {
+                releaseId,
+                canonicalEntityId = canonicalEntityId.Value,
+                currentEntityId = currentEntityId.Value
+            },
+            tx
+        );
+
+        if (rebound <= 0)
+            return false;
+
+        InvalidateEntityArrStatusRows(conn, tx, new[] { currentEntityId.Value, canonicalEntityId.Value });
+        return true;
+    }
+
+    private long? GetCanonicalTmdbEntityId(IDbConnection conn, IDbTransaction tx, int tmdbId, string mediaTypeNormalized)
+    {
+        if (tmdbId <= 0 || string.IsNullOrWhiteSpace(mediaTypeNormalized))
+            return null;
+
+        return conn.QueryFirstOrDefault<long?>(
+            $"""
+            WITH candidates AS (
+              SELECT
+                me.id as EntityId,
+                MAX(CASE WHEN IFNULL(COALESCE(me.ext_updated_at_ts, r.ext_updated_at_ts), 0) > 0 THEN 1 ELSE 0 END) as HasMetadata,
+                MAX(CASE WHEN COALESCE(me.poster_file, r.poster_file, '') <> '' THEN 1 ELSE 0 END) as HasPoster,
+                COUNT(*) as ReleaseCount
+              FROM releases r
+              JOIN media_entities me
+                ON me.id = r.entity_id
+              WHERE IFNULL(CAST(COALESCE(me.tmdb_id, r.tmdb_id) AS INTEGER), 0) = @tmdbId
+                AND {SqlTmdbMediaTypeNormalizedExpr} = @mediaTypeNormalized
+                AND IFNULL(r.entity_id, 0) > 0
+              GROUP BY me.id
+            )
+            SELECT EntityId
+            FROM candidates
+            ORDER BY HasMetadata DESC, HasPoster DESC, ReleaseCount DESC, EntityId ASC
+            LIMIT 1;
+            """,
+            new { tmdbId, mediaTypeNormalized },
+            tx
+        );
+    }
+
+    private static void InvalidateEntityArrStatusRows(IDbConnection conn, IDbTransaction tx, IEnumerable<long> entityIds)
+    {
+        if (entityIds is null) return;
+        var ids = entityIds
+            .Where(id => id > 0)
+            .Distinct()
+            .ToArray();
+        if (ids.Length == 0) return;
+
+        conn.Execute(
+            "DELETE FROM media_entity_arr_status WHERE entity_id IN @ids;",
+            new { ids },
+            tx
+        );
+    }
+
+    private static string? NormalizeMediaTypeForTmdb(string? mediaType, string? unifiedCategory)
+    {
+        var normalized = (mediaType ?? string.Empty).Trim().ToLowerInvariant();
+        if (normalized is "series" or "tv" or "show")
+            return "series";
+        if (normalized is "movie" or "film")
+            return "movie";
+
+        if (!UnifiedCategoryMappings.TryParse(unifiedCategory, out var parsed))
+            return null;
+
+        var fromCategory = UnifiedCategoryMappings.ToMediaType(parsed);
+        if (fromCategory is "series" or "movie")
+            return fromCategory;
+
+        return null;
+    }
+
+    public void SaveTvdbId(long id, int tvdbId)
+    {
+        using var conn = _db.Open();
+        var entityId = conn.ExecuteScalar<long?>(
+            "SELECT entity_id FROM releases WHERE id = @id",
+            new { id }
+        );
+
+        if (entityId.HasValue && entityId.Value > 0)
+        {
+            conn.Execute(
+                """
+                UPDATE media_entities
+                SET tvdb_id = COALESCE(@tvdbId, tvdb_id),
+                    updated_at_ts = @ts
+                WHERE id = @entityId;
+                """,
+                new { entityId, tvdbId, ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds() }
+            );
+        }
+
+        conn.Execute(
+            "UPDATE releases SET tvdb_id = @tvdbId WHERE id = @id;",
+            new { id, tvdbId }
+        );
+    }
+
+    public void SaveRequestTmdbResolution(long releaseId, int? requestTmdbId, string status)
+    {
+        if (releaseId <= 0) return;
+
+        using var conn = _db.Open();
+        var entityId = conn.ExecuteScalar<long?>(
+            "SELECT entity_id FROM releases WHERE id = @releaseId",
+            new { releaseId }
+        );
+
+        if (!entityId.HasValue || entityId.Value <= 0)
+            return;
+
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var cleanStatus = string.IsNullOrWhiteSpace(status) ? "unknown" : status.Trim().ToLowerInvariant();
+        var value = requestTmdbId.HasValue && requestTmdbId.Value > 0 ? requestTmdbId.Value : (int?)null;
+
+        conn.Execute(
+            """
+            UPDATE media_entities
+            SET request_tmdb_id = COALESCE(@requestTmdbId, request_tmdb_id),
+                request_tmdb_status = @status,
+                request_tmdb_updated_at_ts = @now,
+                updated_at_ts = @now
+            WHERE id = @entityId;
+            """,
+            new
+            {
+                entityId,
+                requestTmdbId = value,
+                status = cleanStatus,
+                now
+            }
+        );
+    }
+
+    public void UpsertArrStatus(IEnumerable<ReleaseArrStatusRow> rows)
+    {
+        if (rows is null) return;
+        var list = rows.ToList();
+        if (list.Count == 0) return;
+
+        using var conn = _db.Open();
+        using var tx = conn.BeginTransaction();
+
+        conn.Execute(
+            """
+            INSERT INTO release_arr_status (
+              release_id,
+              in_sonarr,
+              in_radarr,
+              sonarr_url,
+              radarr_url,
+              checked_at_ts
+            )
+            VALUES (
+              @ReleaseId,
+              @InSonarr,
+              @InRadarr,
+              @SonarrUrl,
+              @RadarrUrl,
+              @CheckedAtTs
+            )
+            ON CONFLICT(release_id) DO UPDATE SET
+              in_sonarr = excluded.in_sonarr,
+              in_radarr = excluded.in_radarr,
+              sonarr_url = excluded.sonarr_url,
+              radarr_url = excluded.radarr_url,
+              checked_at_ts = excluded.checked_at_ts;
+            """,
+            list,
+            tx
+        );
+
+        tx.Commit();
+    }
+
+    public void UpdatePosterAttemptSuccess(
+        long id,
+        string? provider,
+        string? providerId,
+        string? lang,
+        string? size,
+        string? hash)
+    {
+        using var conn = _db.Open();
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        conn.Execute(
+            """
+            UPDATE releases
+            SET poster_provider = @provider,
+                poster_provider_id = @providerId,
+                poster_lang = @lang,
+                poster_size = @size,
+                poster_hash = @hash,
+                poster_last_attempt_ts = @ts,
+                poster_last_error = NULL
+            WHERE id = @id;
+            """,
+            new { id, provider, providerId, lang, size, hash, ts = now }
+        );
+    }
+
+    public void UpdatePosterAttemptFailure(
+        long id,
+        string? provider,
+        string? providerId,
+        string? lang,
+        string? size,
+        string? error)
+    {
+        using var conn = _db.Open();
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        conn.Execute(
+            """
+            UPDATE releases
+            SET poster_provider = COALESCE(@provider, poster_provider),
+                poster_provider_id = COALESCE(@providerId, poster_provider_id),
+                poster_lang = COALESCE(@lang, poster_lang),
+                poster_size = COALESCE(@size, poster_size),
+                poster_last_attempt_ts = @ts,
+                poster_last_error = @error
+            WHERE id = @id;
+            """,
+            new { id, provider, providerId, lang, size, error, ts = now }
+        );
+    }
+
+    public void UpdateExternalDetails(
+        long id,
+        string provider,
+        string providerId,
+        string? title,
+        string? overview,
+        string? tagline,
+        string? genres,
+        string? releaseDate,
+        int? runtimeMinutes,
+        double? rating,
+        int? votes,
+        string? directors,
+        string? writers,
+        string? cast,
+        string? titleHu = null,
+        string? overviewHu = null,
+        string? titleOriginal = null,
+        string? imdbId = null)
+    {
+        using var conn = _db.Open();
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+        var entityId = conn.ExecuteScalar<long?>(
+            "SELECT entity_id FROM releases WHERE id = @id",
+            new { id }
+        );
+
+        if (entityId.HasValue && entityId.Value > 0)
+        {
+            conn.Execute(
+                """
+                UPDATE media_entities
+                SET ext_provider = @provider,
+                    ext_provider_id = @providerId,
+                    ext_title = COALESCE(@title, ext_title),
+                    ext_overview = COALESCE(@overview, ext_overview),
+                    ext_tagline = COALESCE(@tagline, ext_tagline),
+                    ext_genres = COALESCE(@genres, ext_genres),
+                    ext_release_date = COALESCE(@releaseDate, ext_release_date),
+                    ext_runtime_minutes = COALESCE(@runtimeMinutes, ext_runtime_minutes),
+                    ext_rating = COALESCE(@rating, ext_rating),
+                    ext_votes = COALESCE(@votes, ext_votes),
+                    ext_directors = COALESCE(@directors, ext_directors),
+                    ext_writers = COALESCE(@writers, ext_writers),
+                    ext_cast = COALESCE(@cast, ext_cast),
+                    ext_title_hu = COALESCE(@titleHu, ext_title_hu),
+                    ext_overview_hu = COALESCE(@overviewHu, ext_overview_hu),
+                    ext_title_original = COALESCE(@titleOriginal, ext_title_original),
+                    ext_imdb_id = COALESCE(@imdbId, ext_imdb_id),
+                    ext_updated_at_ts = @ts,
+                    updated_at_ts = @ts
+                WHERE id = @entityId;
+                """,
+                new
+                {
+                    entityId,
+                    provider,
+                    providerId,
+                    title,
+                    overview,
+                    tagline,
+                    genres,
+                    releaseDate,
+                    runtimeMinutes,
+                    rating,
+                    votes,
+                    directors,
+                    writers,
+                    cast,
+                    titleHu,
+                    overviewHu,
+                    titleOriginal,
+                    imdbId,
+                    ts = now
+                }
+            );
+        }
+
+        conn.Execute(
+            """
+            UPDATE releases
+            SET ext_provider = @provider,
+                ext_provider_id = @providerId,
+                ext_title = COALESCE(@title, ext_title),
+                ext_overview = COALESCE(@overview, ext_overview),
+                ext_tagline = COALESCE(@tagline, ext_tagline),
+                ext_genres = COALESCE(@genres, ext_genres),
+                ext_release_date = COALESCE(@releaseDate, ext_release_date),
+                ext_runtime_minutes = COALESCE(@runtimeMinutes, ext_runtime_minutes),
+                ext_rating = COALESCE(@rating, ext_rating),
+                ext_votes = COALESCE(@votes, ext_votes),
+                ext_directors = COALESCE(@directors, ext_directors),
+                ext_writers = COALESCE(@writers, ext_writers),
+                ext_cast = COALESCE(@cast, ext_cast),
+                ext_title_hu = COALESCE(@titleHu, ext_title_hu),
+                ext_overview_hu = COALESCE(@overviewHu, ext_overview_hu),
+                ext_title_original = COALESCE(@titleOriginal, ext_title_original),
+                ext_imdb_id = COALESCE(@imdbId, ext_imdb_id),
+                ext_updated_at_ts = @ts
+            WHERE id = @id;
+            """,
+            new
+            {
+                id,
+                provider,
+                providerId,
+                title,
+                overview,
+                tagline,
+                genres,
+                releaseDate,
+                runtimeMinutes,
+                rating,
+                votes,
+                directors,
+                writers,
+                cast,
+                titleHu,
+                overviewHu,
+                titleOriginal,
+                imdbId,
+                ts = now
+            }
+        );
+
+        // Invalidate the cached poster match for this release.
+        // Recompute the fingerprint from the release's own title key (same hash as PosterFetchService
+        // uses when storing the match) so we delete exactly one entry — no blast radius.
+        var titleKey = conn.QueryFirstOrDefault<(string? TitleClean, int? Year, string? MediaType, int? Season, int? Episode)>(
+            """
+            SELECT title_clean as TitleClean, year as Year, media_type as MediaType,
+                   season as Season, episode as Episode
+            FROM releases WHERE id = @id;
+            """,
+            new { id }
+        );
+        if (titleKey.TitleClean is not null)
+        {
+            var normalized = NormalizeTitle(titleKey.TitleClean);
+            var fp = PosterServices.PosterMatchCacheService.BuildFingerprint(new PosterServices.PosterTitleKey(
+                titleKey.MediaType ?? "",
+                normalized,
+                titleKey.Year,
+                titleKey.Season,
+                titleKey.Episode));
+            conn.Execute(
+                "DELETE FROM poster_matches WHERE fingerprint = @fp;",
+                new { fp }
+            );
+        }
+    }
+
+    public sealed record RetentionResult(
+        int TotalBefore,
+        int TotalAfter,
+        int PurgedByPerCategory,
+        int PurgedByGlobal,
+        Dictionary<string, int> PerKeyBefore,
+        Dictionary<string, int> PerKeyAfter,
+        List<long> DeletedReleaseIds,
+        List<string> PosterFiles,
+        List<string> StoreDirs);
+
+    public RetentionResult ApplyRetention(long sourceId, int perCatLimit, int globalLimit)
+    {
+        using var conn = _db.Open();
+        using var tx = conn.BeginTransaction();
+
+        var perKeyBefore = GetPerKeyCounts(conn, tx, sourceId);
+        var totalBefore = perKeyBefore.Values.Sum();
+
+        var deletedIds = new List<long>();
+        var posterFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var storeDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Phase 1: collect both candidate sets BEFORE any deletion so that poster
+        // files can be retrieved in a single query (avoids calling GetPosterFilesForReleaseIds
+        // once per deletion pass).  GlobalIds are queried on the full table; IDs that
+        // overlap with perCatIds are excluded at delete time.
+        var perCatIds = perCatLimit > 0
+            ? conn.Query<long>(
+                """
+                WITH ranked AS (
+                  SELECT id,
+                         unified_category,
+                         ROW_NUMBER() OVER (
+                           PARTITION BY unified_category
+                           ORDER BY COALESCE(published_at_ts, created_at_ts) DESC, id DESC
+                         ) AS rn
+                  FROM releases
+                  WHERE source_id = @sid
+                    AND unified_category IN @cats
+                )
+                SELECT id FROM ranked WHERE rn > @limit;
+                """,
+                new { sid = sourceId, cats = RetentionUnifiedCategories, limit = perCatLimit },
+                tx
+            ).AsList()
+            : new List<long>();
+
+        var globalIds = globalLimit > 0
+            ? conn.Query<long>(
+                """
+                WITH ranked AS (
+                  SELECT id,
+                         ROW_NUMBER() OVER (
+                           ORDER BY COALESCE(published_at_ts, created_at_ts) DESC, id DESC
+                         ) AS rn
+                  FROM releases
+                  WHERE source_id = @sid
+                )
+                SELECT id FROM ranked WHERE rn > @limit;
+                """,
+                new { sid = sourceId, limit = globalLimit },
+                tx
+            ).AsList()
+            : new List<long>();
+
+        // Phase 2: ONE poster-files query for all IDs that will be deleted.
+        var allCandidates = new HashSet<long>(perCatIds);
+        allCandidates.UnionWith(globalIds);
+        if (allCandidates.Count > 0)
+        {
+            foreach (var file in GetPosterFilesForReleaseIds(conn, tx, allCandidates))
+                posterFiles.Add(file);
+            foreach (var storeDir in GetPosterStoreDirsForReleaseIds(conn, tx, allCandidates))
+                storeDirs.Add(storeDir);
+        }
+
+        // Phase 3: delete per-cat candidates.
+        var purgedPerCat = 0;
+        if (perCatIds.Count > 0)
+        {
+            DeleteReleaseArrStatus(conn, tx, perCatIds);
+            DeleteReleases(conn, tx, perCatIds);
+            deletedIds.AddRange(perCatIds);
+            purgedPerCat = perCatIds.Count;
+        }
+
+        // Phase 4: delete global candidates not already removed by per-cat pass.
+        var purgedGlobal = 0;
+        var perCatSet = perCatIds.Count > 0 ? new HashSet<long>(perCatIds) : null;
+        var globalOnlyIds = perCatSet is not null
+            ? globalIds.Where(id => !perCatSet.Contains(id)).ToList()
+            : globalIds;
+        if (globalOnlyIds.Count > 0)
+        {
+            DeleteReleaseArrStatus(conn, tx, globalOnlyIds);
+            DeleteReleases(conn, tx, globalOnlyIds);
+            deletedIds.AddRange(globalOnlyIds);
+            purgedGlobal = globalOnlyIds.Count;
+        }
+
+        var perKeyAfter = GetPerKeyCounts(conn, tx, sourceId);
+        var totalAfter = perKeyAfter.Values.Sum();
+
+        tx.Commit();
+
+        if (deletedIds.Count > 0)
+            _badgeSignal?.Notify("releases");
+
+        return new RetentionResult(
+            totalBefore,
+            totalAfter,
+            purgedPerCat,
+            purgedGlobal,
+            perKeyBefore,
+            perKeyAfter,
+            deletedIds,
+            posterFiles.ToList(),
+            storeDirs.ToList());
+    }
+
+    public int GetPosterReferenceCount(string posterFile)
+    {
+        using var conn = _db.Open();
+        return conn.ExecuteScalar<int>(
+            """
+            SELECT COUNT(1)
+            FROM releases r
+            LEFT JOIN media_entities me
+              ON me.id = r.entity_id
+            WHERE r.poster_file = @file
+               OR me.poster_file = @file;
+            """,
+            new { file = posterFile }
+        );
+    }
+
+    public HashSet<string> GetReferencedPosterFiles(IEnumerable<string> posterFiles)
+    {
+        if (posterFiles is null)
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var files = posterFiles
+            .Where(file => !string.IsNullOrWhiteSpace(file))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (files.Count == 0)
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        using var conn = _db.Open();
+        var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        const int chunkSize = 400;
+
+        for (var index = 0; index < files.Count; index += chunkSize)
+        {
+            var chunk = files.Skip(index).Take(chunkSize).ToArray();
+            var rows = conn.Query<string>(
+                """
+                SELECT DISTINCT poster_file
+                FROM (
+                    SELECT r.poster_file as poster_file
+                    FROM releases r
+                    WHERE r.poster_file IN @files
+
+                    UNION ALL
+
+                    SELECT me.poster_file as poster_file
+                    FROM media_entities me
+                    WHERE me.poster_file IN @files
+                ) refs;
+                """,
+                new { files = chunk }
+            );
+
+            foreach (var file in rows)
+            {
+                if (!string.IsNullOrWhiteSpace(file))
+                    referenced.Add(file);
+            }
+        }
+
+        return referenced;
+    }
+
+    public HashSet<string> GetReferencedPosterFiles()
+    {
+        using var conn = _db.Open();
+        var rows = conn.Query<string>(
+            """
+            SELECT DISTINCT poster_file
+            FROM (
+                SELECT r.poster_file as poster_file
+                FROM releases r
+                WHERE r.poster_file IS NOT NULL AND r.poster_file <> ''
+
+                UNION ALL
+
+                SELECT me.poster_file as poster_file
+                FROM media_entities me
+                WHERE me.poster_file IS NOT NULL AND me.poster_file <> ''
+            ) refs;
+            """
+        );
+
+        return rows
+            .Where(file => !string.IsNullOrWhiteSpace(file))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    public sealed class PosterRepairCandidate
+    {
+        public string PosterFile { get; set; } = "";
+        public long PosterUpdatedAtTs { get; set; }
+        public int ReferenceCount { get; set; }
+    }
+
+    public List<PosterRepairCandidate> GetPosterRepairCandidates(long? olderThanTs, int limit, int offset)
+    {
+        using var conn = _db.Open();
+        var safeLimit = Math.Clamp(limit <= 0 ? 200 : limit, 1, 500);
+        var safeOffset = Math.Max(0, offset);
+
+        var rows = conn.Query<PosterRepairCandidate>(
+            """
+            WITH refs AS (
+                SELECT r.poster_file AS PosterFile,
+                       COALESCE(r.poster_updated_at_ts, 0) AS PosterUpdatedAtTs
+                FROM releases r
+                WHERE r.poster_file IS NOT NULL
+                  AND r.poster_file <> ''
+
+                UNION ALL
+
+                SELECT me.poster_file AS PosterFile,
+                       COALESCE(me.poster_updated_at_ts, 0) AS PosterUpdatedAtTs
+                FROM media_entities me
+                WHERE me.poster_file IS NOT NULL
+                  AND me.poster_file <> ''
+            )
+            SELECT
+                PosterFile,
+                MAX(PosterUpdatedAtTs) AS PosterUpdatedAtTs,
+                COUNT(1) AS ReferenceCount
+            FROM refs
+            GROUP BY PosterFile
+            HAVING @olderThanTs IS NULL OR MAX(PosterUpdatedAtTs) <= @olderThanTs
+            ORDER BY MAX(PosterUpdatedAtTs) ASC, PosterFile ASC
+            LIMIT @limit OFFSET @offset;
+            """,
+            new
+            {
+                olderThanTs,
+                limit = safeLimit,
+                offset = safeOffset
+            });
+
+        return rows.AsList();
+    }
+
+    public void ClearPosterFileReferences(string posterFile)
+    {
+        if (string.IsNullOrWhiteSpace(posterFile))
+            return;
+
+        using var conn = _db.Open();
+        var nowTs = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+        conn.Execute(
+            """
+            UPDATE releases
+            SET poster_file = NULL,
+                poster_updated_at_ts = NULL
+            WHERE poster_file = @file;
+            """,
+            new { file = posterFile }
+        );
+
+        conn.Execute(
+            """
+            UPDATE media_entities
+            SET poster_file = NULL,
+                poster_updated_at_ts = NULL,
+                updated_at_ts = @now
+            WHERE poster_file = @file;
+            """,
+            new { file = posterFile, now = nowTs }
+        );
+
+        conn.Execute(
+            "DELETE FROM poster_matches WHERE poster_file = @file;",
+            new { file = posterFile }
+        );
+    }
+
+    public void ClearPosterFileReferences(IEnumerable<string> posterFiles)
+    {
+        var files = posterFiles
+            .Where(f => !string.IsNullOrWhiteSpace(f))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (files.Count == 0)
+            return;
+
+        using var conn = _db.Open();
+        var nowTs = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+        conn.Execute(
+            """
+            UPDATE releases
+            SET poster_file = NULL,
+                poster_updated_at_ts = NULL
+            WHERE poster_file IN @files;
+            """,
+            new { files }
+        );
+
+        conn.Execute(
+            """
+            UPDATE media_entities
+            SET poster_file = NULL,
+                poster_updated_at_ts = NULL,
+                updated_at_ts = @now
+            WHERE poster_file IN @files;
+            """,
+            new { files, now = nowTs }
+        );
+
+        conn.Execute(
+            "DELETE FROM poster_matches WHERE poster_file IN @files;",
+            new { files }
+        );
+    }
+
+    public void ClearAllPosterReferences()
+    {
+        using var conn = _db.Open();
+        var nowTs = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+        conn.Execute(
+            """
+            UPDATE releases
+            SET poster_file = NULL,
+                poster_updated_at_ts = NULL
+            WHERE poster_file IS NOT NULL
+              AND poster_file <> '';
+            """
+        );
+
+        conn.Execute(
+            """
+            UPDATE media_entities
+            SET poster_file = NULL,
+                poster_updated_at_ts = NULL,
+                updated_at_ts = @now
+            WHERE poster_file IS NOT NULL
+              AND poster_file <> '';
+            """,
+            new { now = nowTs }
+        );
+
+        conn.Execute("DELETE FROM poster_matches;");
+    }
+
+    private static Dictionary<string, int> GetPerKeyCounts(IDbConnection conn, IDbTransaction tx, long sourceId)
+    {
+        var rows = conn.Query(
+            """
+            SELECT unified_category as unifiedCategory, COUNT(1) as count
+            FROM releases
+            WHERE source_id = @sid
+            GROUP BY unified_category;
+            """,
+            new { sid = sourceId },
+            tx
+        );
+
+        var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows)
+        {
+            var unifiedValue = (string?)row.unifiedCategory;
+            if (UnifiedCategoryMappings.TryParse(unifiedValue, out var unifiedCategory) &&
+                unifiedCategory != UnifiedCategory.Autre)
+            {
+                var key = UnifiedCategoryMappings.ToKey(unifiedCategory);
+                result[key] = result.TryGetValue(key, out var current) ? current + Convert.ToInt32(row.count ?? 0) : Convert.ToInt32(row.count ?? 0);
+            }
+            else
+            {
+                result["other"] = result.TryGetValue("other", out var current) ? current + Convert.ToInt32(row.count ?? 0) : Convert.ToInt32(row.count ?? 0);
+            }
+        }
+
+        return result;
+    }
+
+    private static void DeleteReleases(IDbConnection conn, IDbTransaction tx, IReadOnlyCollection<long> ids)
+    {
+        if (ids.Count == 0) return;
+        conn.Execute("DELETE FROM poster_store_refs WHERE release_id IN @ids;", new { ids }, tx);
+        conn.Execute("DELETE FROM releases WHERE id IN @ids;", new { ids }, tx);
+    }
+
+    private static void DeleteReleaseArrStatus(IDbConnection conn, IDbTransaction tx, IReadOnlyCollection<long> ids)
+    {
+        if (ids.Count == 0) return;
+        conn.Execute("DELETE FROM release_arr_status WHERE release_id IN @ids;", new { ids }, tx);
+    }
+
+    private static IEnumerable<string> GetPosterFilesForReleaseIds(IDbConnection conn, IDbTransaction tx, IReadOnlyCollection<long> ids)
+    {
+        if (ids.Count == 0) return Array.Empty<string>();
+        var rows = conn.Query<string>(
+            """
+            SELECT DISTINCT COALESCE(r.poster_file, me.poster_file) as posterFile
+            FROM releases r
+            LEFT JOIN media_entities me
+              ON me.id = r.entity_id
+            WHERE r.id IN @ids
+              AND COALESCE(r.poster_file, me.poster_file) IS NOT NULL
+              AND COALESCE(r.poster_file, me.poster_file) <> '';
+            """,
+            new { ids },
+            tx
+        );
+        return rows.Where(r => !string.IsNullOrWhiteSpace(r)).ToList();
+    }
+
+    private static IEnumerable<string> GetPosterStoreDirsForReleaseIds(IDbConnection conn, IDbTransaction tx, IReadOnlyCollection<long> ids)
+    {
+        if (ids.Count == 0) return Array.Empty<string>();
+        var rows = conn.Query<string>(
+            """
+            SELECT DISTINCT COALESCE(r.poster_store_dir, me.poster_store_dir) as storeDir
+            FROM releases r
+            LEFT JOIN media_entities me
+              ON me.id = r.entity_id
+            WHERE r.id IN @ids
+              AND COALESCE(r.poster_store_dir, me.poster_store_dir) IS NOT NULL
+              AND COALESCE(r.poster_store_dir, me.poster_store_dir) <> '';
+            """,
+            new { ids },
+            tx
+        );
+        return rows.Where(r => !string.IsNullOrWhiteSpace(r)).ToList();
+    }
+
+    public int ReparseAllTitles(int batchSize = 1000)
+    {
+        using var conn = _db.Open();
+        var limit = Math.Clamp(batchSize <= 0 ? 1000 : batchSize, 1, 5000);
+        var updated = 0;
+        long lastId = 0;
+
+        while (true)
+        {
+            var rows = conn.Query<(long id, string title, string? unifiedCategory)>(
+                """
+                SELECT id, title, unified_category as unifiedCategory
+                FROM releases
+                WHERE id > @lastId
+                ORDER BY id
+                LIMIT @limit;
+                """,
+                new { limit, lastId }
+            ).AsList();
+
+            if (rows.Count == 0) break;
+
+            using var tx = conn.BeginTransaction();
+            foreach (var row in rows)
+            {
+                var category = UnifiedCategory.Autre;
+                if (!string.IsNullOrWhiteSpace(row.unifiedCategory))
+                    UnifiedCategoryMappings.TryParse(row.unifiedCategory, out category);
+
+                var parsed = _parser.Parse(row.title ?? "", category);
+
+                conn.Execute(
+                    """
+                    UPDATE releases SET
+                        title_clean = @titleClean,
+                        year = @year,
+                        season = @season,
+                        episode = @episode,
+                        resolution = @resolution,
+                        source = @source,
+                        codec = @codec,
+                        release_group = @group,
+                        media_type = @mediaType
+                    WHERE id = @id;
+                    """,
+                    new
+                    {
+                        id = row.id,
+                        titleClean = parsed.TitleClean,
+                        year = parsed.Year,
+                        season = parsed.Season,
+                        episode = parsed.Episode,
+                        resolution = parsed.Resolution,
+                        source = parsed.Source,
+                        codec = parsed.Codec,
+                        group = parsed.ReleaseGroup,
+                        mediaType = parsed.MediaType
+                    },
+                    tx
+                );
+                updated++;
+            }
+            tx.Commit();
+            lastId = rows[^1].id;
+        }
+
+        return updated;
+    }
+
+    public sealed record DuplicateResult(int GroupsFound, int DuplicatesCount, List<long> DuplicateIds);
+
+    public DuplicateResult DetectDuplicates()
+    {
+        using var conn = _db.Open();
+        var duplicateIds = conn.Query<long>(
+            """
+            WITH ranked AS (
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY source_id, title_clean
+                           ORDER BY COALESCE(published_at_ts, created_at_ts) DESC, id DESC
+                       ) AS rn
+                FROM releases
+                WHERE title_clean IS NOT NULL AND title_clean <> ''
+            )
+            SELECT id FROM ranked WHERE rn > 1;
+            """
+        ).AsList();
+
+        var groupsFound = conn.ExecuteScalar<int>(
+            """
+            SELECT COUNT(1) FROM (
+                SELECT 1
+                FROM releases
+                WHERE title_clean IS NOT NULL AND title_clean <> ''
+                GROUP BY source_id, title_clean
+                HAVING COUNT(1) > 1
+            );
+            """
+        );
+
+        return new DuplicateResult(groupsFound, duplicateIds.Count, duplicateIds);
+    }
+
+    public int PurgeDuplicates(List<long> ids)
+    {
+        if (ids.Count == 0) return 0;
+        using var conn = _db.Open();
+        using var tx = conn.BeginTransaction();
+
+        conn.Execute("DELETE FROM release_arr_status WHERE release_id IN @ids;", new { ids }, tx);
+        conn.Execute("DELETE FROM poster_store_refs WHERE release_id IN @ids;", new { ids }, tx);
+        var deleted = conn.Execute("DELETE FROM releases WHERE id IN @ids;", new { ids }, tx);
+
+        tx.Commit();
+        if (deleted > 0)
+            _badgeSignal?.Notify("releases");
+        return deleted;
+    }
+
+    /// <summary>
+    /// Recalcule unified_category pour toutes les releases existantes.
+    /// Marque needs_rebind=1 pour les releases dont la catégorie a changé.
+    /// </summary>
+    public (int processed, int updated, int markedRebind) ReprocessCategories()
+        => ReprocessCategoriesCore(sourceId: null);
+
+    /// <summary>
+    /// Recalcule unified_category uniquement pour une source.
+    /// </summary>
+    public (int processed, int updated, int markedRebind) ReprocessCategoriesForSource(long sourceId)
+        => ReprocessCategoriesCore(sourceId);
+
+    private (int processed, int updated, int markedRebind) ReprocessCategoriesCore(long? sourceId)
+    {
+        using var conn = _db.Open();
+
+        var sourceFilterSql = sourceId.HasValue ? " WHERE id = @sid" : "";
+        var sources = conn.Query($"SELECT id, name FROM sources{sourceFilterSql}", new { sid = sourceId })
+            .ToDictionary(r => (long)r.id, r => (string?)r.name);
+
+        if (sources.Count == 0)
+            return (0, 0, 0);
+
+        var mappingFilterSql = sourceId.HasValue ? " AND source_id = @sid" : "";
+        var allMappings = conn.Query(
+                $"""
+                SELECT source_id, cat_id, group_key, group_label
+                FROM source_category_mappings
+                WHERE group_key IS NOT NULL
+                  AND group_key <> ''
+                  {mappingFilterSql}
+                """,
+                new { sid = sourceId })
+            .GroupBy(r => (long)r.source_id)
+            .ToDictionary(
+                g => g.Key,
+                g => g.ToDictionary(
+                    r => (int)r.cat_id,
+                    r => (key: (string)r.group_key, label: (string?)r.group_label ?? "")));
+
+        var processed = 0;
+        var updated = 0;
+        var markedRebind = 0;
+        const int batchSize = 500;
+        long lastId = 0;
+
+        while (true)
+        {
+            var releaseFilterSql = sourceId.HasValue ? " AND source_id = @sid" : "";
+            var rows = conn.Query(
+                $"""
+                SELECT id, source_id, category_ids, unified_category
+                FROM releases
+                WHERE id > @lastId
+                  {releaseFilterSql}
+                ORDER BY id
+                LIMIT @limit
+                """,
+                new { lastId, limit = batchSize, sid = sourceId }).ToList();
+
+            if (rows.Count == 0) break;
+            processed += rows.Count;
+
+            var changes = new List<(long id, string cat)>();
+            foreach (var row in rows)
+            {
+                var ids = ((string?)row.category_ids ?? "")
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(s => int.TryParse(s.Trim(), out var value) ? (int?)value : null)
+                    .Where(v => v.HasValue)
+                    .Select(v => v!.Value)
+                    .ToList();
+
+                if (ids.Count == 0) continue;
+
+                var srcId = (long)row.source_id;
+                var normalizedIds = CategoryNormalizationService.NormalizeCategoryIds(ids).ToList();
+                var (stdId, specId) = UnifiedCategoryResolver.ResolveStdSpec(null, null, normalizedIds);
+                var map = allMappings.GetValueOrDefault(srcId);
+                var indexerKey = sources.GetValueOrDefault(srcId);
+
+                var unified = ResolveUnifiedCategoryFromMap(map, normalizedIds, null);
+                if (unified == UnifiedCategory.Autre)
+                    unified = _resolver.Resolve(indexerKey, stdId, specId, normalizedIds);
+
+                var next = unified.ToString();
+                if (!string.Equals(next, (string?)row.unified_category, StringComparison.OrdinalIgnoreCase))
+                    changes.Add(((long)row.id, next));
+            }
+
+            if (changes.Count > 0)
+            {
+                using var tx = conn.BeginTransaction();
+                foreach (var (id, cat) in changes)
+                {
+                    conn.Execute(
+                        "UPDATE releases SET unified_category = @cat, needs_rebind = 1 WHERE id = @id",
+                        new { id, cat },
+                        tx);
+                }
+                tx.Commit();
+                updated += changes.Count;
+                markedRebind += changes.Count;
+            }
+
+            lastId = (long)rows[^1].id;
+            if (rows.Count < batchSize) break;
+        }
+
+        return (processed, updated, markedRebind);
+    }
+
+    public sealed record TmdbEntityRebindResult(
+        int Scanned,
+        int EligibleGroups,
+        int ReleasesRebound,
+        int GroupsCollapsed,
+        int Skipped,
+        int Errors);
+
+    /// <summary>
+    /// Recalcule entity_id pour les releases marquées needs_rebind=1.
+    /// </summary>
+    public (int processed, int rebound) RebindEntities(int batchSize = 200)
+        => RebindEntitiesCore(sourceId: null, batchSize);
+
+    /// <summary>
+    /// Recalcule entity_id pour les releases marquées needs_rebind=1 d'une source.
+    /// </summary>
+    public (int processed, int rebound) RebindEntitiesForSource(long sourceId, int batchSize = 200)
+        => RebindEntitiesCore(sourceId, batchSize);
+
+    public TmdbEntityRebindResult RebindEntitiesByTmdb(int batchSize = 200)
+    {
+        using var conn = _db.Open();
+        var limit = Math.Clamp(batchSize, 1, 1000);
+
+        var groups = conn.Query<TmdbRebindGroupRow>(
+            $"""
+            WITH base AS (
+              SELECT
+                CAST(COALESCE(me.tmdb_id, r.tmdb_id) AS INTEGER) as TmdbId,
+                {SqlTmdbMediaTypeNormalizedExpr} as MediaTypeNormalized,
+                r.entity_id as EntityId
+              FROM releases r
+              JOIN media_entities me
+                ON me.id = r.entity_id
+              WHERE IFNULL(r.entity_id, 0) > 0
+                AND IFNULL(CAST(COALESCE(me.tmdb_id, r.tmdb_id) AS INTEGER), 0) > 0
+            )
+            SELECT
+              TmdbId,
+              MediaTypeNormalized,
+              COUNT(DISTINCT EntityId) as DistinctEntityCount
+            FROM base
+            WHERE MediaTypeNormalized IN ('movie', 'series')
+            GROUP BY TmdbId, MediaTypeNormalized
+            HAVING COUNT(DISTINCT EntityId) > 1
+            ORDER BY DistinctEntityCount DESC, TmdbId ASC
+            LIMIT @limit;
+            """,
+            new { limit }
+        ).AsList();
+
+        if (groups.Count == 0)
+            return new TmdbEntityRebindResult(0, 0, 0, 0, 0, 0);
+
+        var scanned = groups.Count;
+        var eligibleGroups = 0;
+        var releasesRebound = 0;
+        var groupsCollapsed = 0;
+        var skipped = 0;
+        var errors = 0;
+
+        foreach (var group in groups)
+        {
+            try
+            {
+                using var tx = conn.BeginTransaction();
+                var canonicalEntityId = GetCanonicalTmdbEntityId(conn, tx, group.TmdbId, group.MediaTypeNormalized);
+                if (!canonicalEntityId.HasValue || canonicalEntityId.Value <= 0)
+                {
+                    skipped++;
+                    tx.Commit();
+                    continue;
+                }
+
+                var releaseRows = conn.Query<TmdbRebindReleaseRow>(
+                    $"""
+                    SELECT
+                      r.id as ReleaseId,
+                      r.entity_id as EntityId
+                    FROM releases r
+                    JOIN media_entities me
+                      ON me.id = r.entity_id
+                    WHERE IFNULL(r.entity_id, 0) > 0
+                      AND IFNULL(CAST(COALESCE(me.tmdb_id, r.tmdb_id) AS INTEGER), 0) = @tmdbId
+                      AND {SqlTmdbMediaTypeNormalizedExpr} = @mediaTypeNormalized
+                    ORDER BY r.id ASC;
+                    """,
+                    new
+                    {
+                        tmdbId = group.TmdbId,
+                        mediaTypeNormalized = group.MediaTypeNormalized
+                    },
+                    tx
+                ).AsList();
+
+                var toRebind = releaseRows
+                    .Where(row => row.EntityId != canonicalEntityId.Value)
+                    .ToList();
+
+                if (toRebind.Count == 0)
+                {
+                    skipped++;
+                    tx.Commit();
+                    continue;
+                }
+
+                eligibleGroups++;
+                var ids = toRebind.Select(row => row.ReleaseId).ToArray();
+                var changed = conn.Execute(
+                    """
+                    UPDATE releases
+                    SET entity_id = @canonicalEntityId
+                    WHERE id IN @ids;
+                    """,
+                    new { canonicalEntityId = canonicalEntityId.Value, ids },
+                    tx
+                );
+
+                var touchedEntityIds = toRebind
+                    .Select(row => row.EntityId)
+                    .Append(canonicalEntityId.Value);
+                InvalidateEntityArrStatusRows(conn, tx, touchedEntityIds);
+
+                tx.Commit();
+                releasesRebound += changed;
+                if (changed > 0)
+                    groupsCollapsed++;
+            }
+            catch (Exception ex)
+            {
+                errors++;
+                _logger.LogWarning(
+                    ex,
+                    "TMDB entity rebind failed for tmdbId={TmdbId} mediaType={MediaType}",
+                    group.TmdbId,
+                    group.MediaTypeNormalized);
+            }
+        }
+
+        return new TmdbEntityRebindResult(
+            scanned,
+            eligibleGroups,
+            releasesRebound,
+            groupsCollapsed,
+            skipped,
+            errors);
+    }
+
+    private (int processed, int rebound) RebindEntitiesCore(long? sourceId, int batchSize)
+    {
+        using var conn = _db.Open();
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var limit = Math.Clamp(batchSize, 1, 1000);
+        var processed = 0;
+        var rebound = 0;
+        long lastId = 0;
+
+        while (true)
+        {
+            var sourceFilterSql = sourceId.HasValue ? " AND source_id = @sid" : "";
+            var rows = conn.Query<(long Id, string? UnifiedCategory, string? TitleClean, int? Year)>(
+                $"""
+                SELECT id AS Id, unified_category AS UnifiedCategory, title_clean AS TitleClean, year AS Year
+                FROM releases
+                WHERE needs_rebind = 1
+                  AND id > @lastId
+                  {sourceFilterSql}
+                  AND unified_category IS NOT NULL AND unified_category <> ''
+                  AND title_clean IS NOT NULL AND title_clean <> ''
+                ORDER BY id
+                LIMIT @limit
+                """,
+                new { lastId, limit, sid = sourceId }
+            ).AsList();
+
+            if (rows.Count == 0) break;
+            processed += rows.Count;
+
+            var ids = rows.Select(r => r.Id).ToList();
+
+            using var tx = conn.BeginTransaction();
+
+            conn.Execute(
+                """
+                INSERT INTO media_entities(
+                  unified_category, title_clean, year,
+                  created_at_ts, updated_at_ts
+                )
+                SELECT DISTINCT
+                  r.unified_category, r.title_clean, r.year,
+                  @now, @now
+                FROM releases r
+                WHERE r.id IN @ids
+                ON CONFLICT(unified_category, title_clean, IFNULL(year, -1)) DO UPDATE SET
+                  updated_at_ts = excluded.updated_at_ts;
+                """,
+                new { ids, now }, tx
+            );
+
+            var rebindSourceFilterSql = sourceId.HasValue ? " AND source_id = @sid" : "";
+            conn.Execute(
+                $"""
+                UPDATE releases
+                SET entity_id = (
+                    SELECT me.id
+                    FROM media_entities me
+                    WHERE me.unified_category = releases.unified_category
+                      AND me.title_clean = releases.title_clean
+                      AND IFNULL(me.year, -1) = IFNULL(releases.year, -1)
+                    LIMIT 1
+                ),
+                needs_rebind = 0
+                WHERE id IN @ids
+                  {rebindSourceFilterSql};
+                """,
+                new { ids, sid = sourceId }, tx
+            );
+
+            tx.Commit();
+            rebound += rows.Count;
+            lastId = rows[^1].Id;
+            if (rows.Count < limit) break;
+        }
+
+        return (processed, rebound);
+    }
+
+    public async Task<IReadOnlyList<CategoryPreviewItemDto>> GetPreviewByCategoryAsync(
+        long sourceId,
+        int catId,
+        int limit,
+        CancellationToken ct)
+    {
+        var safeLimit = Math.Clamp(limit, 1, 50);
+
+        const string sql = """
+            SELECT
+                r.published_at_ts  AS PublishedAtTs,
+                s.name             AS SourceName,
+                r.title            AS Title,
+                r.size_bytes       AS SizeBytes,
+                r.category_id      AS CategoryId,
+                sc.name            AS ResultCategoryName,
+                r.unified_category AS UnifiedCategory,
+                r.tmdb_id          AS TmdbId,
+                r.tvdb_id          AS TvdbId,
+                r.seeders          AS Seeders
+            FROM releases r
+            JOIN sources s ON s.id = r.source_id
+            LEFT JOIN source_categories sc
+              ON sc.source_id = r.source_id AND sc.cat_id = r.category_id
+            WHERE r.source_id = @sourceId
+              AND (
+                    r.category_id = @catId
+                 OR (',' || COALESCE(r.category_ids, '') || ',') LIKE '%,' || @catId || ',%'
+              )
+            ORDER BY r.published_at_ts DESC
+            LIMIT @limit;
+            """;
+
+        using var conn = _db.Open();
+        var rows = await conn.QueryAsync<CategoryPreviewItemDto>(
+            new CommandDefinition(sql, new { sourceId, catId, limit = safeLimit }, cancellationToken: ct));
+
+        return rows.ToList();
+    }
+
+    // ── Poster store (Phase 2) ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Same as <see cref="SavePoster"/> but also persists the canonical store columns
+    /// (<c>poster_key</c>, <c>poster_store_dir</c>) and upserts <c>poster_store_refs</c>.
+    /// </summary>
+    /// <summary>
+    /// Persists poster store metadata for a release and returns the previous
+    /// <c>poster_store_dir</c> value when it has changed, so the caller can
+    /// schedule GC for the displaced directory.  Returns <c>null</c> when the
+    /// storeDir was not changed or when no previous value existed.
+    /// </summary>
+    public string? SavePosterWithStore(
+        long id, int? tmdbId, string? posterPath, string posterFile,
+        string posterKey, string storeDir)
+    {
+        if (string.IsNullOrWhiteSpace(posterFile))
+            throw new ArgumentException("posterFile cannot be null or empty", nameof(posterFile));
+        if (string.IsNullOrWhiteSpace(posterKey))
+            throw new ArgumentException("posterKey cannot be null or empty", nameof(posterKey));
+        if (string.IsNullOrWhiteSpace(storeDir))
+            throw new ArgumentException("storeDir cannot be null or empty", nameof(storeDir));
+
+        using var conn = _db.Open();
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+        var entityId = conn.ExecuteScalar<long?>(
+            "SELECT entity_id FROM releases WHERE id = @id",
+            new { id }
+        );
+
+        // Capture previous storeDir before the update so that callers can
+        // trigger GC for the displaced directory when it changes.
+        var prevStoreDir = conn.ExecuteScalar<string?>(
+            "SELECT poster_store_dir FROM releases WHERE id = @id",
+            new { id }
+        );
+
+        using var tx = conn.BeginTransaction();
+        try
+        {
+            if (entityId.HasValue && entityId.Value > 0)
+            {
+                conn.Execute(
+                    """
+                    UPDATE media_entities
+                    SET tmdb_id = COALESCE(@tmdbId, tmdb_id),
+                        poster_file = @posterFile,
+                        poster_key = @posterKey,
+                        poster_store_dir = @storeDir,
+                        poster_updated_at_ts = @ts,
+                        updated_at_ts = @ts
+                    WHERE id = @entityId;
+                    """,
+                    new { entityId, tmdbId, posterFile, posterKey, storeDir, ts = now },
+                    tx
+                );
+            }
+
+            conn.Execute(
+                """
+                UPDATE releases
+                SET tmdb_id = COALESCE(@tmdbId, tmdb_id),
+                    poster_path = COALESCE(@posterPath, poster_path),
+                    poster_file = @posterFile,
+                    poster_key = @posterKey,
+                    poster_store_dir = @storeDir,
+                    poster_updated_at_ts = @ts
+                WHERE id = @id;
+                """,
+                new { id, tmdbId, posterPath, posterFile, posterKey, storeDir, ts = now },
+                tx
+            );
+
+            conn.Execute(
+                """
+                DELETE FROM poster_store_refs
+                WHERE release_id = @id
+                  AND store_dir <> @storeDir;
+                """,
+                new { id, storeDir },
+                tx
+            );
+
+            conn.Execute(
+                """
+                INSERT OR IGNORE INTO poster_store_refs(store_dir, release_id, created_at_ts)
+                VALUES (@storeDir, @id, @ts);
+                """,
+                new { storeDir, id, ts = now },
+                tx
+            );
+
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+
+        // Return the displaced storeDir for GC only when the value actually changed.
+        return !string.IsNullOrWhiteSpace(prevStoreDir) &&
+               !string.Equals(prevStoreDir, storeDir, StringComparison.OrdinalIgnoreCase)
+               ? prevStoreDir
+               : null;
+    }
+
+    /// <summary>
+    /// Returns storeDirs that have no row in <c>poster_store_refs</c> —
+    /// used by the GC to identify orphaned store directories.
+    /// </summary>
+    public IReadOnlyList<string> GetOrphanedStoreDirs(IEnumerable<string> candidateDirs)
+    {
+        var dirs = candidateDirs
+            .Where(d => !string.IsNullOrWhiteSpace(d))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (dirs.Count == 0) return [];
+
+        using var conn = _db.Open();
+        const int chunkSize = 400;
+        var orphaned = new List<string>();
+
+        for (var i = 0; i < dirs.Count; i += chunkSize)
+        {
+            var chunk = dirs.Skip(i).Take(chunkSize).ToArray();
+            var referenced = conn.Query<string>(
+                """
+                SELECT DISTINCT psr.store_dir
+                FROM poster_store_refs psr
+                JOIN releases r
+                  ON r.id = psr.release_id
+                WHERE psr.store_dir IN @chunk
+                  AND COALESCE(r.poster_store_dir, '') = psr.store_dir;
+                """,
+                new { chunk }
+            ).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var dir in chunk)
+            {
+                if (!referenced.Contains(dir))
+                    orphaned.Add(dir);
+            }
+        }
+
+        return orphaned;
+    }
+
+    /// <summary>
+    /// Returns releases that have a legacy flat <c>poster_file</c> but no
+    /// <c>poster_store_dir</c> yet — used by the migration endpoint.
+    /// </summary>
+    public IReadOnlyList<LegacyPosterRow> GetReleasesWithLegacyPosters(int limit, int offset)
+    {
+        var safeLimit = Math.Clamp(limit <= 0 ? 100 : limit, 1, 500);
+        var safeOffset = Math.Max(0, offset);
+
+        using var conn = _db.Open();
+        return conn.Query<LegacyPosterRow>(
+            """
+            SELECT id AS Id,
+                   poster_file AS PosterFile,
+                   poster_provider AS PosterProvider,
+                   poster_provider_id AS PosterProviderId
+            FROM releases
+            WHERE poster_file IS NOT NULL
+              AND poster_file <> ''
+              AND (poster_store_dir IS NULL OR poster_store_dir = '')
+            ORDER BY id ASC
+            LIMIT @limit OFFSET @offset;
+            """,
+            new { limit = safeLimit, offset = safeOffset }
+        ).AsList();
+    }
+
+    // -------------------------------------------------------------------------
+    // Badge summary
+    // -------------------------------------------------------------------------
+
+    public sealed record BadgeSummaryStats(
+        int SourcesCount,
+        int ReleasesCount,
+        long ReleasesLatestTs,
+        int? ReleasesNewSinceTsCount);
+
+    public BadgeSummaryStats GetBadgeSummaryStats(long releasesSinceTs)
+    {
+        using var conn = _db.Open();
+
+        using var stats = conn.QueryMultiple(
+            """
+            SELECT COUNT(1) FROM sources;
+            SELECT COUNT(1) FROM releases;
+            SELECT COALESCE(MAX(created_at_ts), 0) FROM releases;
+            """);
+
+        var sourcesCount = stats.ReadSingle<int>();
+        var releasesCount = stats.ReadSingle<int>();
+        var releasesLatestTs = stats.ReadSingle<long>();
+
+        int? releasesNewSinceTsCount = null;
+        if (releasesSinceTs > 0)
+        {
+            releasesNewSinceTsCount = conn.ExecuteScalar<int>(
+                """
+                SELECT COUNT(1)
+                FROM releases
+                WHERE created_at_ts > @sinceTs;
+                """,
+                new { sinceTs = releasesSinceTs });
+        }
+
+        return new BadgeSummaryStats(sourcesCount, releasesCount, releasesLatestTs, releasesNewSinceTsCount);
+    }
+}
+
+public sealed class LegacyPosterRow
+{
+    public long Id { get; set; }
+    public string PosterFile { get; set; } = "";
+    public string? PosterProvider { get; set; }
+    public string? PosterProviderId { get; set; }
+}
+
+public sealed class ReleaseArrStatusRow
+{
+    public long ReleaseId { get; set; }
+    public bool InSonarr { get; set; }
+    public bool InRadarr { get; set; }
+    public string? SonarrUrl { get; set; }
+    public string? RadarrUrl { get; set; }
+    public long CheckedAtTs { get; set; }
+}
