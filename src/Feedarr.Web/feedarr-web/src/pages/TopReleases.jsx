@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { pick } from "../app/i18n.js";
+import { translateUiText } from "../app/runtimeTranslation.js";
 import { useSearchParams } from "react-router-dom";
 import { apiGet, apiPost } from "../api/client.js";
 import Loader from "../ui/Loader.jsx";
@@ -247,9 +249,17 @@ function TopGlobalEmptyState({ title, hours, field, sortLabel, dedupeLabel }) {
       <div className="top24-sectionHead">
         <h2 style={{ marginBottom: 0, fontSize: 18 }}>{title}</h2>
       </div>
-      <div className="top24-empty">
-        <strong>Aucun item classe sur les dernieres {hours}h.</strong>
-        <span>Mode {sortLabel} avec dedup {dedupeLabel}, fenetre basee sur {field}.</span>
+      <div className="top24-empty" data-no-ui-translate="1">
+        <strong>{pick(
+          `Nincs rangsorolt elem az elmúlt ${hours} órában.`,
+          `No ranked item in the last ${hours}h.`,
+          `Aucun item classe sur les dernieres ${hours}h.`
+        )}</strong>
+        <span>{pick(
+          `Rendezés: ${sortLabel}, duplikátumszűrés: ${dedupeLabel}, időablak alapja: ${field}.`,
+          `${sortLabel} mode with ${dedupeLabel} dedup, window based on ${field}.`,
+          `Mode ${sortLabel} avec dedup ${dedupeLabel}, fenetre basee sur ${field}.`
+        )}</span>
       </div>
     </section>
   );
@@ -649,14 +659,21 @@ export default function TopReleases() {
     if (Number.isNaN(date.getTime())) return "";
     return date.toLocaleString(uiLanguage, { dateStyle: "short", timeStyle: "short" });
   }, [windowInfo?.sinceUtc, uiLanguage]);
-  const sortLabel = useMemo(() => getSortLabel(sortUsed), [sortUsed]);
-  const dedupeLabel = useMemo(() => getDedupeLabel(dedupeUsed, supportsEntityDedupe), [dedupeUsed, supportsEntityDedupe]);
+  const sortLabel = useMemo(() => translateUiText(getSortLabel(sortUsed)), [sortUsed]);
+  const dedupeLabel = useMemo(() => translateUiText(getDedupeLabel(dedupeUsed, supportsEntityDedupe)), [dedupeUsed, supportsEntityDedupe]);
   const topSummary = useMemo(() => {
     const hours = Number(windowInfo?.hours || TOP_HOURS);
     const field = String(windowInfo?.field || "published_at_ts");
-    const sourceSummary = selectedSourceName ? ` • Source: ${selectedSourceName}` : " • Tous indexeurs";
-    const sinceSummary = sinceLabel ? ` • Depuis ${sinceLabel}` : "";
-    return `Classement ${sortLabel} • Dedup ${dedupeLabel} • Fenetre ${field} sur ${hours}h${sinceSummary} • ${totalItems} items • ${categorySections.length} categories${sourceSummary}`;
+    const n = categorySections.length;
+    const sourceSummary = selectedSourceName
+      ? ` • ${pick("Forrás", "Source", "Source")}: ${selectedSourceName}`
+      : ` • ${pick("Összes indexelő", "All indexers", "Tous indexeurs")}`;
+    const sinceSummary = sinceLabel ? ` • ${pick("Ekkortól", "Since", "Depuis")}: ${sinceLabel}` : "";
+    return pick(
+      `Rangsor: ${sortLabel} • Duplikátumszűrés: ${dedupeLabel} • Időablak: ${field}, ${hours} óra${sinceSummary} • ${totalItems} elem • ${n} kategória${sourceSummary}`,
+      `Ranking ${sortLabel} • Dedup ${dedupeLabel} • Window ${field} over ${hours}h${sinceSummary} • ${totalItems} items • ${n} categories${sourceSummary}`,
+      `Classement ${sortLabel} • Dedup ${dedupeLabel} • Fenetre ${field} sur ${hours}h${sinceSummary} • ${totalItems} items • ${n} categories${sourceSummary}`
+    );
   }, [windowInfo?.hours, windowInfo?.field, selectedSourceName, sinceLabel, totalItems, categorySections.length, sortLabel, dedupeLabel]);
 
   if (loading) return <Loader />;
@@ -669,7 +686,7 @@ export default function TopReleases() {
       <div className="pagehead">
         <div>
           <h1>Top 24h</h1>
-          <div className="muted">{topSummary}</div>
+          <div className="muted" data-no-ui-translate="1">{topSummary}</div>
         </div>
       </div>
 

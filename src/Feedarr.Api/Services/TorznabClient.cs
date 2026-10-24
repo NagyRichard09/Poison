@@ -52,7 +52,7 @@ public sealed class TorznabClient
         // Torznab/Prowlarr/Jackett providers run on local network — bypass private-IP SSRF guard
         req.Options.Set(SsrfGuardHandler.AllowPrivateHostOption, true);
 
-        req.Headers.UserAgent.Add(new ProductInfoHeaderValue("Feedarr", "1.0"));
+        req.Headers.UserAgent.Add(new ProductInfoHeaderValue("Poisonarr", "1.0"));
         req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/xml"));
         req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/xml"));
         req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));

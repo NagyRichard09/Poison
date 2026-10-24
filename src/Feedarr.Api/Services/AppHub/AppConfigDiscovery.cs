@@ -22,6 +22,7 @@ public sealed record DiscoveredApp(
 ///   Seerr                      : settings.json     → main.apiKey
 ///   Tautulli                   : config.ini        → [General] http_port, api_key, http_root
 ///   qBittorrent                : qBittorrent/qBittorrent.conf → WebUI\Port
+///   Plex                       : Library/Application Support/Plex Media Server/Preferences.xml → PlexOnlineToken
 /// </summary>
 public static class AppConfigDiscovery
 {
@@ -45,6 +46,7 @@ public static class AppConfigDiscovery
                     "seerr" => ReadSeerrConfig(def, dir),
                     "tautulli" => ReadTautulliConfig(def, dir),
                     "qbittorrent" => ReadQbittorrentConfig(def, dir),
+                    "plex" => ReadPlexConfig(def, dir),
                     _ => null
                 };
                 if (found is not null) result.Add(found);
@@ -133,6 +135,29 @@ public static class AppConfigDiscovery
         var port = values.TryGetValue(@"WebUI\Port", out var ps) && int.TryParse(ps, out var p) && p is > 0 and < 65536
             ? p : def.DefaultPort;
         return new DiscoveredApp(def.Type, def.Name, file, port, null, null);
+    }
+
+    internal static DiscoveredApp ReadPlexConfig(AppDefinition def, string dir)
+    {
+        var file = new[]
+            {
+                Path.Combine(dir, "Library", "Application Support", "Plex Media Server", "Preferences.xml"),
+                Path.Combine(dir, "Plex Media Server", "Preferences.xml"),
+            }
+            .FirstOrDefault(File.Exists);
+        if (file is null) return new DiscoveredApp(def.Type, def.Name, dir, def.DefaultPort, null, null);
+        return ParsePlexPreferencesXml(def, file, ReadSmallFile(file));
+    }
+
+    /// <summary>&lt;Preferences PlexOnlineToken="…" ManualPortMappingPort="…" /&gt; – the token exists once the server is claimed.</summary>
+    internal static DiscoveredApp ParsePlexPreferencesXml(AppDefinition def, string path, string xml)
+    {
+        var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
+        using var reader = XmlReader.Create(new StringReader(xml), settings);
+        var doc = new XmlDocument { XmlResolver = null };
+        doc.Load(reader);
+        var token = doc.DocumentElement?.GetAttribute("PlexOnlineToken")?.Trim();
+        return new DiscoveredApp(def.Type, def.Name, path, def.DefaultPort, null, string.IsNullOrWhiteSpace(token) ? null : token);
     }
 
     internal static Dictionary<string, string> ParseIniSection(string ini, string section)

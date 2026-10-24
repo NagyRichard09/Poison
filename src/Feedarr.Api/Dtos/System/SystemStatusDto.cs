@@ -2,7 +2,7 @@ namespace Feedarr.Api.Dtos.System;
 
 public sealed class SystemStatusDto
 {
-    public string AppName { get; set; } = "Feedarr";
+    public string AppName { get; set; } = "Poisonarr";
     public string Version { get; set; } = "";
     public string Environment { get; set; } = "";
     public long UptimeSeconds { get; set; }

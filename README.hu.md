@@ -1,13 +1,18 @@
-# Feedarr (Poison) – magyar kiadás
+<p align="center"><img src="docs/screenshots/logo.png" alt="Poisonarr logó" width="140" /></p>
 
-A [Feedarr](https://github.com/Guizmos/Feedarr) release dashboard továbbfejlesztett,
-magyar felhasználóknak szánt változata: egy felületen a torrent feedek, a Seerr
+# Poisonarr
+
+A Poisonarr a [Feedarr](https://github.com/Guizmos/Feedarr) release dashboard továbbfejlesztett,
+magyar felhasználóknak szánt változata (GPL-3.0): egy felületen a torrent feedek, a Seerr
 kérések és a teljes *arr* rendszer.
 
 ## Mit tud ez a változat?
 
+- **Egy telepítő, minden app** – Plex, Poisonarr, Seerr, Prowlarr, Sonarr, Radarr, Tautulli és
+  qBittorrent egy Proxmox LXC konténerben, böngészős beállító varázslóval (Plexszel kezd).
+
 - **Alkalmazás-központ** – Seerr, Prowlarr, Sonarr, Radarr, Tautulli, qBittorrent az
-  oldalsávban, a Feedarr-on belül beágyazva vagy új lapon, elérhetőség-jelzéssel;
+  oldalsávban, a Poisonarr-on belül beágyazva vagy új lapon, elérhetőség-jelzéssel;
   egy kattintásos automatikus összekötés (API kulcsok kiolvasása, Prowlarr/Sonarr/
   Radarr/qBittorrent/Seerr bekötése).
 - **Seerr integráció** – webhook fogadás (Overseerr / Jellyseerr / Seerr), automatikus
@@ -33,10 +38,10 @@ Részletek: [proxmox/README.md](proxmox/README.md).
 
 ## Docker
 
-A `docker/Dockerfile` továbbra is használható csak a Feedarr futtatására:
+A `docker/Dockerfile` továbbra is használható csak a Poisonarr futtatására:
 
 ```bash
-docker build -f docker/Dockerfile -t feedarr:hu .
+docker build -f docker/Dockerfile -t poisonarr .
 ```
 
 ## Dokumentáció

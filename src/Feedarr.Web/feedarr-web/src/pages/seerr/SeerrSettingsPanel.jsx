@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { apiGet, apiPost, apiPut } from "../../api/client.js";
 import ToggleSwitch from "../../ui/ToggleSwitch.jsx";
+import { NO_RUNTIME_TRANSLATE, useL } from "../../app/i18n.js";
 
 const card = {
   background: "var(--bg2)", border: "1px solid var(--border)",
@@ -37,6 +38,7 @@ function ToggleRow({ label, hint, checked, onChange }) {
  * the stored value (null is sent), the "Törlés" button clears it ("" is sent).
  */
 function SecretField({ label, hint, placeholder, configured, display, value, onChange }) {
+  const L = useL();
   const cleared = value === "";
   return (
     <div style={{ padding: "6px 0" }}>
@@ -44,11 +46,11 @@ function SecretField({ label, hint, placeholder, configured, display, value, onC
         {label}
         {configured && value == null && (
           <span style={{ marginLeft: 8, fontSize: 11, color: "#0F6E56" }}>
-            ✓ beállítva{display ? ` (${display})` : ""}
+            ✓ {L("beállítva", "set", "défini")}{display ? ` (${display})` : ""}
           </span>
         )}
         {cleared && configured && (
-          <span style={{ marginLeft: 8, fontSize: 11, color: "#A32D2D" }}>mentéskor törlődik</span>
+          <span style={{ marginLeft: 8, fontSize: 11, color: "#A32D2D" }}>{L("mentéskor törlődik", "cleared on save", "effacé à l'enregistrement")}</span>
         )}
       </div>
       <div style={{ display: "flex", gap: 6 }}>
@@ -56,13 +58,13 @@ function SecretField({ label, hint, placeholder, configured, display, value, onC
           type="password"
           autoComplete="off"
           style={inputStyle}
-          placeholder={configured ? "•••••• (változatlan)" : placeholder}
+          placeholder={configured ? `•••••• (${L("változatlan", "unchanged", "inchangé")})` : placeholder}
           value={value ?? ""}
           onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
         />
         {configured && (
           <button type="button" style={buttonStyle} onClick={() => onChange(cleared ? null : "")}>
-            {cleared ? "Mégse" : "Törlés"}
+            {cleared ? L("Mégse", "Cancel", "Annuler") : L("Törlés", "Clear", "Effacer")}
           </button>
         )}
       </div>
@@ -72,6 +74,7 @@ function SecretField({ label, hint, placeholder, configured, display, value, onC
 }
 
 export default function SeerrSettingsPanel({ onSaved }) {
+  const L = useL();
   const [seerr, setSeerr] = useState(null);
   const [notif, setNotif] = useState(null);
   // Secret edits: undefined/null = unchanged, "" = clear, string = new value
@@ -87,12 +90,12 @@ export default function SeerrSettingsPanel({ onSaved }) {
         setSeerr(s || {});
         setNotif(n || {});
       })
-      .catch((e) => alive && setMsg({ error: true, text: e?.message || "Betöltési hiba" }));
+      .catch((e) => alive && setMsg({ error: true, text: e?.message || "load error" }));
     return () => { alive = false; };
   }, []);
 
   if (!seerr || !notif) {
-    return <div style={card}>{msg?.text || "Beállítások betöltése…"}</div>;
+    return <div style={card} {...NO_RUNTIME_TRANSLATE}>{msg?.text || L("Beállítások betöltése…", "Loading settings…", "Chargement des paramètres…")}</div>;
   }
 
   const setSecret = (key, value) => setSecrets((prev) => ({ ...prev, [key]: value }));
@@ -124,10 +127,10 @@ export default function SeerrSettingsPanel({ onSaved }) {
       setSeerr(s || seerr);
       setNotif(n || notif);
       setSecrets({});
-      setMsg({ error: false, text: "Beállítások elmentve." });
+      setMsg({ error: false, text: L("Beállítások elmentve.", "Settings saved.", "Paramètres enregistrés.") });
       onSaved?.();
     } catch (e) {
-      setMsg({ error: true, text: e?.message || "Mentési hiba" });
+      setMsg({ error: true, text: e?.message || L("Mentési hiba", "Save error", "Erreur d'enregistrement") });
     } finally {
       setBusy("");
     }
@@ -138,40 +141,40 @@ export default function SeerrSettingsPanel({ onSaved }) {
     setMsg(null);
     try {
       const r = await apiPost("/api/notifications/test", notificationBody());
-      const parts = (r?.results || []).map((x) => `${x.channel}: ${x.ok ? "OK" : `hiba – ${x.error || "?"}`}`);
-      setMsg({ error: !r?.ok, text: parts.length ? parts.join(" · ") : "Nincs csatorna." });
+      const parts = (r?.results || []).map((x) => `${x.channel}: ${x.ok ? "OK" : `${L("hiba", "error", "erreur")} – ${x.error || "?"}`}`);
+      setMsg({ error: !r?.ok, text: parts.length ? parts.join(" · ") : L("Nincs csatorna.", "No channel.", "Aucun canal.") });
     } catch (e) {
-      setMsg({ error: true, text: e?.message || "Teszt hiba" });
+      setMsg({ error: true, text: e?.message || L("Teszt hiba", "Test error", "Erreur de test") });
     } finally {
       setBusy("");
     }
   };
 
   return (
-    <div style={card}>
-      <strong style={{ color: "var(--text)", display: "block", marginBottom: 6 }}>⚙️ Egyeztetés és Sonarr/Radarr</strong>
+    <div style={card} {...NO_RUNTIME_TRANSLATE}>
+      <strong style={{ color: "var(--text)", display: "block", marginBottom: 6 }}>⚙️ {L("Egyeztetés és Sonarr/Radarr", "Matching and Sonarr/Radarr", "Association et Sonarr/Radarr")}</strong>
       <ToggleRow
-        label="Automatikus küldés Sonarr/Radarr-ba"
-        hint="Egyezés után a release a release/push API-n megy át; a Sonarr/Radarr a minőségprofil alapján dönt a letöltésről."
+        label={L("Automatikus küldés Sonarr/Radarr-ba", "Send to Sonarr/Radarr automatically", "Envoi automatique vers Sonarr/Radarr")}
+        hint={L("Egyezés után a release a release/push API-n megy át; a Sonarr/Radarr a minőségprofil alapján dönt a letöltésről.", "After a match the release goes through the release/push API; Sonarr/Radarr decide about the download based on the quality profile.", "Après une association, la release passe par l'API release/push ; Sonarr/Radarr décident du téléchargement selon le profil de qualité.")}
         checked={seerr.autoPushToArr}
         onChange={(v) => setSeerr({ ...seerr, autoPushToArr: v })}
       />
       <ToggleRow
-        label="Magyar release előnyben"
-        hint="HUN / magyar felirat-hang címkés release-ek kerülnek előre."
+        label={L("Magyar release előnyben", "Prefer Hungarian releases", "Préférer les releases hongroises")}
+        hint={L("HUN / magyar felirat-hang címkés release-ek kerülnek előre.", "Releases tagged HUN / Hungarian audio or subtitles come first.", "Les releases marquées HUN / audio ou sous-titres hongrois passent en premier.")}
         checked={seerr.preferHungarian}
         onChange={(v) => setSeerr({ ...seerr, preferHungarian: v })}
       />
       <ToggleRow
-        label="Szigorú évad-egyeztetés"
-        hint="Sorozatnál csak a kért évad(ok) vagy évad nélküli csomagok fogadhatók el."
+        label={L("Szigorú évad-egyeztetés", "Strict season matching", "Association stricte des saisons")}
+        hint={L("Sorozatnál csak a kért évad(ok) vagy évad nélküli csomagok fogadhatók el.", "For series only the requested season(s) or packs without a season are accepted.", "Pour les séries, seules la ou les saisons demandées ou les packs sans saison sont acceptés.")}
         checked={seerr.strictSeasonMatch}
         onChange={(v) => setSeerr({ ...seerr, strictSeasonMatch: v })}
       />
       <div style={rowStyle}>
         <div style={labelStyle}>
-          <div style={{ color: "var(--text)" }}>Minimum seeder</div>
-          <div style={hintStyle}>Ennél kevesebb seederrel rendelkező release-t nem választ (0 = nincs korlát).</div>
+          <div style={{ color: "var(--text)" }}>{L("Minimum seeder", "Minimum seeders", "Seeders minimum")}</div>
+          <div style={hintStyle}>{L("Ennél kevesebb seederrel rendelkező release-t nem választ (0 = nincs korlát).", "Releases with fewer seeders are not picked (0 = no limit).", "Les releases avec moins de seeders ne sont pas choisies (0 = pas de limite).")}</div>
         </div>
         <input
           type="number" min={0} max={10000} style={{ ...inputStyle, width: 90 }}
@@ -180,16 +183,16 @@ export default function SeerrSettingsPanel({ onSaved }) {
         />
       </div>
 
-      <strong style={{ color: "var(--text)", display: "block", margin: "14px 0 6px" }}>🔔 Értesítések</strong>
+      <strong style={{ color: "var(--text)", display: "block", margin: "14px 0 6px" }}>🔔 {L("Értesítések", "Notifications", "Notifications")}</strong>
       <ToggleRow
-        label="Értesítések engedélyezése"
+        label={L("Értesítések engedélyezése", "Enable notifications", "Activer les notifications")}
         checked={notif.enabled}
         onChange={(v) => setNotif({ ...notif, enabled: v })}
       />
       <SecretField
         label="Discord webhook URL"
         placeholder="https://discord.com/api/webhooks/…"
-        hint="Discord: csatorna beállítások → Integrációk → Webhookok."
+        hint={L("Discord: csatorna beállítások → Integrációk → Webhookok.", "Discord: channel settings → Integrations → Webhooks.", "Discord : paramètres du salon → Intégrations → Webhooks.")}
         configured={notif.hasDiscordWebhookUrl}
         value={secrets.discordWebhookUrl}
         onChange={(v) => setSecret("discordWebhookUrl", v)}
@@ -197,21 +200,21 @@ export default function SeerrSettingsPanel({ onSaved }) {
       <SecretField
         label="ntfy topic URL"
         placeholder="https://ntfy.sh/feedarr-titkos-topic"
-        hint="Saját szerver is lehet (pl. http://ntfy.lan/feedarr)."
+        hint={L("Saját szerver is lehet (pl. http://ntfy.lan/feedarr).", "A self-hosted server works too (e.g. http://ntfy.lan/feedarr).", "Un serveur auto-hébergé fonctionne aussi (ex. http://ntfy.lan/feedarr).")}
         configured={notif.hasNtfyTopicUrl}
         display={notif.ntfyTopicDisplay}
         value={secrets.ntfyTopicUrl}
         onChange={(v) => setSecret("ntfyTopicUrl", v)}
       />
       <SecretField
-        label="ntfy access token (opcionális)"
+        label={L("ntfy access token (opcionális)", "ntfy access token (optional)", "Jeton d'accès ntfy (facultatif)")}
         placeholder="tk_…"
         configured={notif.hasNtfyToken}
         value={secrets.ntfyToken}
         onChange={(v) => setSecret("ntfyToken", v)}
       />
       <SecretField
-        label="Általános webhook URL (opcionális)"
+        label={L("Általános webhook URL (opcionális)", "Generic webhook URL (optional)", "URL de webhook générique (facultatif)")}
         placeholder="https://home-assistant.lan/api/webhook/feedarr"
         hint="JSON POST: event, title, message, url, imageUrl, data."
         configured={notif.hasWebhookUrl}
@@ -219,19 +222,19 @@ export default function SeerrSettingsPanel({ onSaved }) {
         value={secrets.webhookUrl}
         onChange={(v) => setSecret("webhookUrl", v)}
       />
-      <ToggleRow label="Új Seerr kérés" checked={notif.onSeerrRequest}
+      <ToggleRow label={L("Új Seerr kérés", "New Seerr request", "Nouvelle demande Seerr")} checked={notif.onSeerrRequest}
         onChange={(v) => setNotif({ ...notif, onSeerrRequest: v })} />
-      <ToggleRow label="Megérkezett a kért tartalom (egyezés)" checked={notif.onSeerrMatch}
+      <ToggleRow label={L("Megérkezett a kért tartalom (egyezés)", "Requested content arrived (match)", "Contenu demandé disponible (association)")} checked={notif.onSeerrMatch}
         onChange={(v) => setNotif({ ...notif, onSeerrMatch: v })} />
-      <ToggleRow label="Sonarr/Radarr küldés eredménye" checked={notif.onArrPush}
+      <ToggleRow label={L("Sonarr/Radarr küldés eredménye", "Sonarr/Radarr send result", "Résultat de l'envoi Sonarr/Radarr")} checked={notif.onArrPush}
         onChange={(v) => setNotif({ ...notif, onArrPush: v })} />
 
       <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center", flexWrap: "wrap" }}>
         <button type="button" style={primaryButton} disabled={!!busy} onClick={save}>
-          {busy === "save" ? "Mentés…" : "Mentés"}
+          {busy === "save" ? L("Mentés…", "Saving…", "Enregistrement…") : L("Mentés", "Save", "Enregistrer")}
         </button>
         <button type="button" style={buttonStyle} disabled={!!busy} onClick={test}>
-          {busy === "test" ? "Küldés…" : "Teszt értesítés"}
+          {busy === "test" ? L("Küldés…", "Sending…", "Envoi…") : L("Teszt értesítés", "Test notification", "Notification de test")}
         </button>
         {msg && (
           <span style={{ fontSize: 12, color: msg.error ? "#A32D2D" : "#0F6E56" }}>{msg.text}</span>

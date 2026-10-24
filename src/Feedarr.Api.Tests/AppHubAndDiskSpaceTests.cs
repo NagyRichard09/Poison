@@ -105,4 +105,36 @@ public sealed class AppHubAndDiskSpaceTests
         Assert.True(DiskSpaceService.IsLow(40 * gb, 1000 * gb, new DiskSpaceSettings { WarnFreePercent = 0, WarnFreeGb = 50 }));
         Assert.False(DiskSpaceService.IsLow(40 * gb, 100 * gb, new DiskSpaceSettings { WarnFreePercent = 0, WarnFreeGb = 0 }));
     }
+
+    [Fact]
+    public void PlexPreferences_TokenIsRead_AndMissingTokenMeansUnclaimed()
+    {
+        const string claimed = """<?xml version="1.0" encoding="utf-8"?><Preferences MachineIdentifier="m1" PlexOnlineToken="tok-123" allowedNetworks="127.0.0.1/255.255.255.255"/>""";
+        var app = AppConfigDiscovery.ParsePlexPreferencesXml(Def("plex"), "/x/Preferences.xml", claimed);
+        Assert.Equal("tok-123", app.ApiKey);
+        Assert.Equal(32400, app.Port);
+
+        const string fresh = """<?xml version="1.0" encoding="utf-8"?><Preferences MachineIdentifier="m1"/>""";
+        Assert.Null(AppConfigDiscovery.ParsePlexPreferencesXml(Def("plex"), "/x/Preferences.xml", fresh).ApiKey);
+    }
+
+    [Theory]
+    [InlineData("""{"MediaContainer":{"claimed":true}}""", true)]
+    [InlineData("""{"MediaContainer":{"claimed":"1"}}""", true)]
+    [InlineData("""{"MediaContainer":{"claimed":false}}""", false)]
+    [InlineData("""{"MediaContainer":{}}""", false)]
+    public void PlexIdentity_ClaimedFlag(string json, bool expected)
+    {
+        var node = System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject;
+        Assert.Equal(expected, StackSetupService.PlexClaimed(node));
+    }
+
+    [Fact]
+    public void PlexLink_OpensPlexWebInNewTab()
+    {
+        var link = AppHubService.BuildDefaultLink(Def("plex"));
+        Assert.Equal("http://{host}:32400/web", link.Url);
+        Assert.Equal("http://127.0.0.1:32400", link.InternalUrl);
+        Assert.Equal("tab", link.OpenMode);
+    }
 }

@@ -719,6 +719,17 @@ public sealed class SettingsRepository
         Upsert(AppLinksKey, JsonSerializer.Serialize(settings, JsonOpts));
     }
 
+    // --------------------
+    // Simple boolean flags (stored as JSON true/false)
+    // --------------------
+    public bool GetJsonFlag(string key)
+    {
+        var raw = GetRaw(key);
+        return !string.IsNullOrWhiteSpace(raw) && raw.Trim().Equals("true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public void SetJsonFlag(string key, bool value) => Upsert(key, value ? "true" : "false");
+
     private string? ProtectOptionalSecret(string? value)
     {
         var trimmed = value?.Trim();

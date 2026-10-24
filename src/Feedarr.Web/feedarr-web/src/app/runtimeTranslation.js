@@ -14,6 +14,161 @@ const t = (en, overrides = {}) => ({ en, ...overrides });
 // t() accepts { hu: "...", ... } overrides; getLanguageCode maps "hu-HU" → "hu"
 
 const PHRASE_TRANSLATIONS = {
+  // --- audit 2026-10: strings that were missing from the dictionary ---
+  "centre d'applications": t("App hub", { hu: "Alkalmazás-központ" }),
+  "note (imdb)": t("Rating (IMDb)", { hu: "Értékelés (IMDb)" }),
+  "audio / sous-titres hongrois": t("Hungarian audio / subtitles", { hu: "Magyar hang / felirat" }),
+  "toutes les langues": t("All languages", { hu: "Minden nyelv" }),
+  "🇭🇺 hongrois uniquement": t("🇭🇺 Hungarian only", { hu: "🇭🇺 Csak magyar" }),
+  "🇭🇺 oui": t("🇭🇺 Yes", { hu: "🇭🇺 Igen" }),
+  stockage: t("Storage", { hu: "Tárhely" }),
+  "demandes seerr": t("Seerr requests", { hu: "Seerr kérések" }),
+  "lancer poisonarr": t("Launch Poisonarr", { hu: "Poisonarr indítása" }),
+  "bienvenue sur poisonarr": t("Welcome to Poisonarr", { hu: "Üdvözöl a Poisonarr" }),
+
+  // --- audit 2026-10: strings that were missing from the dictionary ---
+  "(laisser vide pour conserver)": t("(leave empty to keep)", { hu: "(hagyd üresen a megtartáshoz)" }),
+  "•••••••• (laisser vide pour conserver)": t("•••••••• (leave empty to keep)", { hu: "•••••••• (hagyd üresen a megtartáshoz)" }),
+  "laisser vide pour conserver": t("Leave empty to keep", { hu: "Hagyd üresen a megtartáshoz" }),
+  "). les actions de sauvegarde sont temporairement verrouillees": t("). Backup actions are temporarily locked", { hu: "). A mentési műveletek átmenetileg zárolva vannak" }),
+  "depuis": t("From", { hu: "A(z)" }),
+  ", clique \"copy torznab feed\", puis colle l'url complete": t(", click \"Copy Torznab Feed\", then paste the full URL", { hu: " felületén kattints a „Copy Torznab Feed” gombra, majd illeszd be a teljes URL-t" }),
+  "le fournisseur": t("the provider", { hu: "szolgáltató" }),
+  "dans": t("In", { hu: "A(z)" }),
+  ", utilise \"copy torznab feed\" puis colle l'url ici. la cle api du fournisseur configuree a l'etape 3 sera utilisee": t(", use \"Copy Torznab Feed\" then paste the URL here. The provider API key configured in step 3 will be used", { hu: " felületén használd a „Copy Torznab Feed” gombot, majd illeszd be ide az URL-t. A 3. lépésben beállított szolgáltató API kulcsa lesz használva" }),
+  "la requete a bien ete lancee sur": t("The request was sent to", { hu: "A lekérés elindult itt:" }),
+  ", mais l'indexeur classe les items retournes dans d'autres categories. la colonne \"categorie item\" affiche toujours la valeur brute remontee par l'indexeur": t(", but the indexer files the returned items under other categories. The \"Item category\" column always shows the raw value reported by the indexer", { hu: ", de az indexelő más kategóriákba sorolja a visszaadott elemeket. Az „Elem kategória” oszlop mindig az indexelő által küldött nyers értéket mutatja" }),
+  "recuperation automatique indisponible pour": t("Automatic retrieval unavailable for", { hu: "Az automatikus lekérés nem érhető el ehhez:" }),
+  ". ajoute les indexeurs manuellement via \"copy torznab feed\"": t(". Add the indexers manually via \"Copy Torznab Feed\"", { hu: ". Add hozzá kézzel az indexelőket a „Copy Torznab Feed” segítségével" }),
+  "afficher le filtre dedup top 24h": t("Show the Top 24h dedup filter", { hu: "Top 24 óra duplikátumszűrő megjelenítése" }),
+  "afficher les categories": t("Show categories", { hu: "Kategóriák megjelenítése" }),
+  "afficher les details": t("Show details", { hu: "Részletek megjelenítése" }),
+  "afficher les options avancees": t("Show advanced options", { hu: "Speciális beállítások megjelenítése" }),
+  "ajoute au moins un provider metadata configure et actif": t("Add at least one configured and active metadata provider", { hu: "Adj hozzá legalább egy beállított és aktív metaadat-szolgáltatót" }),
+  "ajoute un indexeur et/ou des providers pour activer toutes les fonctionnalites": t("Add an indexer and/or providers to enable all features", { hu: "Adj hozzá indexelőt és/vagy szolgáltatókat az összes funkció használatához" }),
+  "ajuste ces parametres par petits pas. des valeurs agressives peuvent augmenter la charge sqlite, reseau et disque": t("Adjust these settings in small steps. Aggressive values can increase SQLite, network and disk load", { hu: "Ezeket kis lépésekben állítsd. A túl agresszív értékek növelhetik az SQLite, a hálózat és a lemez terhelését" }),
+  "analyse de la sauvegarde en cours": t("Analysing backup", { hu: "Mentés elemzése…" }),
+  "analyse de la sauvegarde indisponible. la restauration reste bloquee tant que la previsualisation n'est pas chargee": t("Backup analysis unavailable. Restore stays blocked until the preview is loaded", { hu: "A mentés elemzése nem érhető el. A visszaállítás zárolva marad, amíg az előnézet be nem töltődik" }),
+  "apercu :": t("Preview:", { hu: "Előnézet:" }),
+  "apercu des 20 derniers resultats": t("Preview of the last 20 results", { hu: "Az utolsó 20 találat előnézete" }),
+  "appliquer le poster": t("Apply poster", { hu: "Poszter alkalmazása" }),
+  "arret": t("Stopping", { hu: "Leállítás…" }),
+  "aucun indexeur detecte automatiquement pour": t("No indexer detected automatically for", { hu: "Nem található automatikusan indexelő ehhez:" }),
+  "aucun poster disponible sur": t("No poster available on", { hu: "Nincs elérhető poszter itt:" }),
+  "poster indisponible pour": t("Poster unavailable for", { hu: "Poszter nem érhető el ehhez:" }),
+  "aucun provider configure. ajoute un provider pour afficher ces options": t("No provider configured. Add a provider to show these options", { hu: "Nincs beállított szolgáltató. Adj hozzá egyet ezekhez a beállításokhoz" }),
+  "aucun resultat retourne par l'indexeur pour cette categorie": t("The indexer returned no results for this category", { hu: "Az indexelő nem adott vissza találatot ebben a kategóriában" }),
+  "aucun type disponible a ajouter": t("No type available to add", { hu: "Nincs hozzáadható típus" }),
+  "augmenter la taille des cartes": t("Increase card size", { hu: "Kártyák nagyítása" }),
+  "reduire la taille des cartes": t("Decrease card size", { hu: "Kártyák kicsinyítése" }),
+  "taille des cartes": t("Card size", { hu: "Kártyaméret" }),
+  "base url requise pour tester": t("Base URL required to test", { hu: "A teszthez alap URL szükséges" }),
+  "url requise pour tester": t("URL required to test", { hu: "A teszthez URL szükséges" }),
+  "categorie item: valeur brute remontee par l'indexeur pour chaque release. aucune categorie poisonarr n'est reappliquee ici": t("Item category: raw value reported by the indexer for each release. No Poisonarr category is re-applied here", { hu: "Elem kategória: az indexelő által küldött nyers érték minden release-nél. Itt nem alkalmazunk Poisonarr kategóriát" }),
+  "certains fournisseurs sont indisponibles — les resultats peuvent etre incomplets": t("Some providers are unavailable — results may be incomplete", { hu: "Néhány szolgáltató nem érhető el – a találatok hiányosak lehetnek" }),
+  "cet indexeur est deja ajoute": t("This indexer is already added", { hu: "Ez az indexelő már hozzá van adva" }),
+  "cette action execute un vacuum sqlite pour compacter la base de donnees et recuperer l'espace disque. l'operation peut prendre quelques secondes": t("This runs an SQLite VACUUM to compact the database and reclaim disk space. It can take a few seconds", { hu: "SQLite VACUUM fut le, ami tömöríti az adatbázist és felszabadítja a lemezterületet. Néhány másodpercig tarthat" }),
+  "cette action va desactiver le provider": t("This will disable the provider", { hu: "Ez letiltja a szolgáltatót" }),
+  "cette action va re-parser tous les titres de releases pour recalculer les metadonnees (titre nettoye, saison, episode, resolution, codec, etc.). utile apres une mise a jour du parser. l'operation peut prendre un moment selon le nombre de releases": t("This re-parses every release title to recompute metadata (clean title, season, episode, resolution, codec, etc.). Useful after a parser update. It can take a while depending on the number of releases", { hu: "Minden release címét újra feldolgozza és újraszámolja a metaadatokat (tisztított cím, évad, epizód, felbontás, kodek stb.). Feldolgozó-frissítés után hasznos. A release-ek számától függően eltarthat egy ideig" }),
+  "cette action va scanner le dossier de posters et supprimer les fichiers qui ne sont plus references par aucune release en base. cette action est definitive": t("This scans the poster folder and deletes files no longer referenced by any release in the database. This cannot be undone", { hu: "Átnézi a poszter mappát, és törli azokat a fájlokat, amelyekre már egyetlen release sem hivatkozik. A művelet végleges" }),
+  "cette action va supprimer tous les posters telecharges localement. elle ne nettoie pas uniquement les orphelins. ils seront re-telecharges automatiquement lors du prochain affichage": t("This deletes every locally downloaded poster, not only orphans. They are downloaded again automatically the next time they are shown", { hu: "Törli az összes helyben letöltött posztert, nem csak az árvákat. A következő megjelenítéskor automatikusan újra letöltődnek" }),
+  "chargement des categories": t("Loading categories", { hu: "Kategóriák betöltése…" }),
+  "chargement des fournisseurs": t("Loading providers", { hu: "Szolgáltatók betöltése…" }),
+  "chargement des fournisseurs…": t("Loading providers…", { hu: "Szolgáltatók betöltése…" }),
+  "chargement des indexeurs": t("Loading indexers", { hu: "Indexelők betöltése…" }),
+  "chargement des parametres ui…": t("Loading UI settings…", { hu: "Felület beállításainak betöltése…" }),
+  "chargement des parametres applications…": t("Loading application settings…", { hu: "Alkalmazás beállítások betöltése…" }),
+  "chargement des parametres securite…": t("Loading security settings…", { hu: "Biztonsági beállítások betöltése…" }),
+  "chargement des parametres": t("Loading settings", { hu: "Beállítások betöltése…" }),
+  "chargement des parametres…": t("Loading settings…", { hu: "Beállítások betöltése…" }),
+  "chargement des sources…": t("Loading sources…", { hu: "Források betöltése…" }),
+  "chargement du feed…": t("Loading feed…", { hu: "Feed betöltése…" }),
+  "chargement du statut systeme…": t("Loading system status…", { hu: "Rendszerállapot betöltése…" }),
+  "charger la config": t("Load config", { hu: "Konfiguráció betöltése" }),
+  "choisir une couleur": t("Choose a colour", { hu: "Szín kiválasztása" }),
+  "choisissez de preference les categories specifiques, plus pertinentes. les categories \"parents\" incluent souvent des sous-categories qui peuvent provoquer un mauvais tri": t("Prefer the specific categories, they are more relevant. \"Parent\" categories often include sub-categories that can cause wrong sorting", { hu: "Lehetőleg a konkrét kategóriákat válaszd, azok pontosabbak. A „szülő” kategóriák gyakran alkategóriákat is tartalmaznak, ami hibás rendezést okozhat" }),
+  "cliquer pour selectionner": t("Click to select", { hu: "Kattints a kijelöléshez" }),
+  "configure au moins un provider metadata pour continuer": t("Configure at least one metadata provider to continue", { hu: "A folytatáshoz állíts be legalább egy metaadat-szolgáltatót" }),
+  "configure le mode d'acces de poisonarr": t("Configure how Poisonarr can be accessed", { hu: "Állítsd be, hogyan lehet elérni a Poisonarr-t" }),
+  "connexion ok, mais aucun indexeur recupere automatiquement. tu pourras les ajouter manuellement a l'etape suivante (copy torznab feed + cle api)": t("Connection OK, but no indexer was retrieved automatically. You can add them manually in the next step (Copy Torznab Feed + API key)", { hu: "A kapcsolat rendben, de automatikusan egy indexelő sem jött le. A következő lépésben kézzel hozzáadhatod őket (Copy Torznab Feed + API kulcs)" }),
+  "deux workers posters avec des limites manuelles augmentent fortement le risque de 429, bannissement temporaire ou timeouts": t("Two poster workers with manual limits greatly increase the risk of 429s, temporary bans or timeouts", { hu: "Két poszter-feldolgozó kézi korlátokkal jelentősen növeli a 429-es hibák, az ideiglenes tiltás és az időtúllépések kockázatát" }),
+  "deux workers posters restent raisonnables, mais surveille les rate limits et les temps de reponse des providers": t("Two poster workers are still reasonable, but watch the providers' rate limits and response times", { hu: "Két poszter-feldolgozó még ésszerű, de figyeld a szolgáltatók korlátait és válaszidejét" }),
+  "demarrer le wizard": t("Start the wizard", { hu: "Varázsló indítása" }),
+  "erreur definition par defaut": t("Failed to set default", { hu: "Nem sikerült alapértelmezetté tenni" }),
+  "erreur lors de l'action": t("Action failed", { hu: "A művelet nem sikerült" }),
+  "erreur lors de l'ajout": t("Failed to add", { hu: "A hozzáadás nem sikerült" }),
+  "erreur lors de la demande": t("Request failed", { hu: "A kérés nem sikerült" }),
+  "erreur lors du chargement des sources": t("Failed to load sources", { hu: "A források betöltése nem sikerült" }),
+  "erreur lors du chargement des tops": t("Failed to load the top lists", { hu: "A toplisták betöltése nem sikerült" }),
+  "fermer la recherche": t("Close search", { hu: "Keresés bezárása" }),
+  "fermer le menu lateral": t("Close sidebar", { hu: "Oldalsáv bezárása" }),
+  "ouvrir le menu": t("Open menu", { hu: "Menü megnyitása" }),
+  "rechercher dans la bibliotheque": t("Search the library", { hu: "Keresés a könyvtárban" }),
+  "id tmdb manquant pour cet element": t("TMDB ID missing for this item", { hu: "Ennél az elemnél hiányzik a TMDB azonosító" }),
+  "id tmdb manquant pour creer une demande": t("TMDB ID missing to create a request", { hu: "A kéréshez hiányzik a TMDB azonosító" }),
+  "id tvdb manquant pour cet element": t("TVDB ID missing for this item", { hu: "Ennél az elemnél hiányzik a TVDB azonosító" }),
+  "identifiants deja configures. laisse vide pour conserver le mot de passe actuel": t("Credentials already configured. Leave empty to keep the current password", { hu: "A belépési adatok már be vannak állítva. Hagyd üresen a jelenlegi jelszó megtartásához" }),
+  "impossible d'ouvrir le lien de telechargement": t("Could not open the download link", { hu: "Nem sikerült megnyitni a letöltési linket" }),
+  "impossible de charger les fournisseurs": t("Could not load providers", { hu: "Nem sikerült betölteni a szolgáltatókat" }),
+  "impossible de charger les fournisseurs. la configuration locale est utilisee": t("Could not load providers. The local configuration is used", { hu: "Nem sikerült betölteni a szolgáltatókat. A helyi beállítás van használatban" }),
+  "impossible de charger les indexeurs": t("Could not load indexers", { hu: "Nem sikerült betölteni az indexelőket" }),
+  "impossible de recuperer la liste auto pour": t("Could not retrieve the list automatically for", { hu: "Nem sikerült automatikusan lekérni a listát ehhez:" }),
+  "impossible de supprimer la source": t("Could not delete the source", { hu: "Nem sikerült törölni a forrást" }),
+  "impossible de synchroniser le statut arr": t("Could not sync the Arr status", { hu: "Nem sikerült szinkronizálni az Arr állapotot" }),
+  "impossible de verifier les fournisseurs avant lancement": t("Could not check the providers before starting", { hu: "Indítás előtt nem sikerült ellenőrizni a szolgáltatókat" }),
+  "impossible de verifier les mises a jour": t("Could not check for updates", { hu: "Nem sikerült ellenőrizni a frissítéseket" }),
+  "la charge reste minimale, mais la sync sera plus lente et peut deriver davantage sur les longues series de sources": t("Load stays minimal, but sync is slower and can drift more over long runs of sources", { hu: "A terhelés minimális marad, de a szinkron lassabb, és sok forrásnál jobban elcsúszhat" }),
+  "la page n'a pas pu etre chargee": t("The page could not be loaded", { hu: "Az oldalt nem sikerült betölteni" }),
+  "la sync peut solliciter davantage sqlite, le reseau et le disque. sur nas ou stockage lent, surveille la latence": t("Sync can put more load on SQLite, the network and the disk. On a NAS or slow storage, watch the latency", { hu: "A szinkron jobban terhelheti az SQLite-ot, a hálózatot és a lemezt. NAS-on vagy lassú tárolón figyeld a késleltetést" }),
+  "les mots de passe ne correspondent pas ou sont incomplets": t("Passwords do not match or are incomplete", { hu: "A jelszavak nem egyeznek vagy hiányosak" }),
+  "nettoyer les posters orphelins": t("Clean orphan posters", { hu: "Árva poszterek törlése" }),
+  "nom du provider": t("Provider name", { hu: "Szolgáltató neve" }),
+  "optionnel - configure une ou plusieurs apps": t("Optional - configure one or more apps", { hu: "Opcionális – állíts be egy vagy több alkalmazást" }),
+  "oui": t("Yes", { hu: "Igen" }),
+  "ouvrir": t("Open", { hu: "Megnyitás" }),
+  "ouvrir dans": t("Open in", { hu: "Megnyitás itt:" }),
+  "ouvrir les details": t("Open details", { hu: "Részletek megnyitása" }),
+  "par defaut": t("Default", { hu: "Alapértelmezett" }),
+  "par media": t("Per media", { hu: "Médiánként" }),
+  "pas d'options avancees pour": t("No advanced options for", { hu: "Nincsenek speciális beállítások ehhez:" }),
+  "purger les doublons": t("Purge duplicates", { hu: "Duplikátumok törlése" }),
+  "purger les logs": t("Purge logs", { hu: "Naplók törlése" }),
+  "recherche des posters manquants via les providers configures": t("Searching missing posters via the configured providers", { hu: "Hiányzó poszterek keresése a beállított szolgáltatóknál" }),
+  "rechercher": t("Search", { hu: "Keresés" }),
+  "rechercher par id ou nom": t("Search by id or name", { hu: "Keresés azonosító vagy név szerint…" }),
+  "rechercher un titre": t("Search a title", { hu: "Cím keresése…" }),
+  "titre a rechercher pour le poster": t("Title to search for the poster", { hu: "A poszterhez keresett cím" }),
+  "reclassement lance avec succes pour cette source": t("Reclassification started for this source", { hu: "Az újrabesorolás elindult ennél a forrásnál" }),
+  "reclasser l'existant pour cette source": t("Reclassify existing items for this source", { hu: "Újrasoroljuk a meglévő elemeket ennél a forrásnál" }),
+  "non trouve - ouvrir": t("Not found - Open", { hu: "Nem található – megnyitás:" }),
+  "reclasser l'existant pour cette source ? cette action peut prendre quelques instants": t("Reclassify existing items for this source? This can take a moment", { hu: "Újrasoroljuk a meglévő elemeket ennél a forrásnál? Ez eltarthat egy kis ideig" }),
+  "recuperation auto des indexeurs": t("Automatic retrieval of indexers from", { hu: "Az indexelők automatikus lekérése innen:" }),
+  "impossible. enregistre la config puis ajoute les indexeurs manuellement a l'etape suivante (copy torznab feed + cle api)": t("failed. Save the config, then add the indexers manually in the next step (Copy Torznab Feed + API key)", { hu: "nem sikerült. Mentsd a beállítást, majd a következő lépésben add hozzá kézzel az indexelőket (Copy Torznab Feed + API kulcs)" }),
+  "redemarrage requis apres restauration. les actions de sauvegarde sont verrouillees jusqu'au redemarrage": t("Restart required after restore. Backup actions are locked until the restart", { hu: "Visszaállítás után újraindítás szükséges. A mentési műveletek az újraindításig zárolva vannak" }),
+  "renseigne la cle api pour tester les nouveaux parametres": t("Enter the API key to test the new settings", { hu: "Add meg az API kulcsot az új beállítások teszteléséhez" }),
+  "retour a la bibliotheque": t("Back to the library", { hu: "Vissza a könyvtárba" }),
+  "reessayer": t("Retry", { hu: "Újra" }),
+  "resultats:": t("Results:", { hu: "Találatok:" }),
+  "smart protege automatiquement si instance exposee": t("Smart protects automatically when the instance is exposed", { hu: "Az intelligens mód automatikusan véd, ha a példány kívülről elérhető" }),
+  "supprimer le provider metadata": t("Delete metadata provider", { hu: "Metaadat-szolgáltató törlése" }),
+  "tester les categories (caps)": t("Test categories (caps)", { hu: "Kategóriák tesztelése (caps)" }),
+  "tous les fournisseurs disponibles sont deja ajoutes": t("All available providers are already added", { hu: "Az összes elérhető szolgáltató már hozzá van adva" }),
+  "tous les indexeurs": t("All indexers", { hu: "Összes indexelő" }),
+  "tous les indexeurs detectes sont deja ajoutes": t("All detected indexers are already added", { hu: "Az összes talált indexelő már hozzá van adva" }),
+  "tous les providers sont deja ajoutes": t("All providers are already added", { hu: "Az összes szolgáltató már hozzá van adva" }),
+  "tres stable": t("Very stable", { hu: "Nagyon stabil" }),
+  "a surveiller": t("Keep an eye on it", { hu: "Figyelendő" }),
+  "equilibre correct entre vitesse, stabilite et pression reseau. c'est le reglage conseille pour la plupart des instances": t("Good balance between speed, stability and network pressure. This is the recommended setting for most instances", { hu: "Jó egyensúly a sebesség, a stabilitás és a hálózati terhelés között. A legtöbb példánynál ez az ajánlott beállítás" }),
+  "tu peux quand meme enregistrer et ajouter les indexeurs manuellement a l'etape suivante": t("You can still save and add the indexers manually in the next step", { hu: "Így is mentheted, és a következő lépésben kézzel hozzáadhatod az indexelőket" }),
+  "une erreur est survenue": t("An error occurred", { hu: "Hiba történt" }),
+  "une erreur est survenue dans cette fenetre": t("An error occurred in this window", { hu: "Hiba történt ebben az ablakban" }),
+  "une erreur inattendue est survenue": t("An unexpected error occurred", { hu: "Váratlan hiba történt" }),
+  "username et password sont requis": t("Username and password are required", { hu: "Felhasználónév és jelszó megadása kötelező" }),
+  "valeur(s) hors bornes ou incoherentes — la limite globale doit etre ≥ a la limite par categorie": t("Value(s) out of range or inconsistent — the global limit must be ≥ the per-category limit", { hu: "Tartományon kívüli vagy ellentmondó érték – a teljes korlát legyen ≥ a kategóriánkénti korlát" }),
+  "credential(s) seront re-chiffrees avec le trousseau courant": t("credential(s) will be re-encrypted with the current keyring", { hu: "hitelesítő adat újra lesz titkosítva a jelenlegi kulcstartóval" }),
+  "releases en double. pour chaque groupe de doublons, seule la release la plus recente sera conservee. cette action est definitive": t("duplicate releases. For each group of duplicates only the newest release is kept. This cannot be undone", { hu: "duplikált release. Minden csoportból csak a legújabb release marad meg. A művelet végleges" }),
+  "releases mises a jour": t("releases updated", { hu: "release frissítve" }),
+
   "webhook beállítás seerr-ben": t("Webhook setup in Seerr", { hu: "webhook beállítás seerr-ben" }),
 
   "kérte": t("Requested by", { hu: "kérte" }),
@@ -77,11 +232,11 @@ const PHRASE_TRANSLATIONS = {
   "derniers items": t("Last items", { hu: "Legutóbbi elemek" }),
   "temps moyen": t("Average time", { hu: "Átlagos idő" }),
   resume: t("Summary", { hu: "Összefoglalás" }),
-  "verifie la configuration puis lance feedarr": t("Check the configuration then launch Feedarr", { hu: "Ellenőrizze a konfigurációt, majd indítsa el a Feedarr-t" }),
+  "verifie la configuration puis lance poisonarr": t("Check the configuration then launch Poisonarr", { hu: "Ellenőrizze a konfigurációt, majd indítsa el a Poisonarr-t" }),
   "configuration rapide en 6 etapes": t("Quick setup in 6 steps", { hu: "Gyors beállítás 6 lépésben" }),
   "configuration rapide en 7 etapes": t("Quick setup in 7 steps", { hu: "Gyors beállítás 7 lépésben" }),
   "langue par defaut": t("Default language", { hu: "Alapértelmezett nyelv" }),
-  "choisis la langue par defaut de feedarr": t("Choose Feedarr default language", { hu: "Válassza ki a Feedarr alapértelmezett nyelvét" }),
+  "choisis la langue par defaut de poisonarr": t("Choose Poisonarr default language", { hu: "Válassza ki a Poisonarr alapértelmezett nyelvét" }),
   "cette etape applique la langue ui et la langue metadata par defaut": t("This step sets both UI and metadata default language", { hu: "Ez a lépés beállítja a felhasználói felület és a metaadat alapértelmezett nyelvét" }),
   "langue utilisee pour les infos media (tmdb: synopsis, titres, cast)": t("Language used for media info (TMDB: overview, titles, cast)", { hu: "Médiainformációhoz használt nyelv (TMDB: leírás, címek, szereplők)" }),
   "langue de l'interface (formatage dates/heures et preference ui)": t("UI language (date/time formatting and UI preference)", { hu: "Felhasználói felület nyelve (dátum/idő formátum és UI beállítás)" }),
@@ -279,6 +434,7 @@ const PHRASE_TRANSLATIONS = {
 };
 
 const WORD_TRANSLATIONS = {
+  telechargements: t("Downloads", { hu: "Letöltések" }),
   bibliotheque: t("Library", { hu: "Könyvtár" }),
   parametres: t("Settings", { hu: "Beállítások" }),
   fournisseur: t("Provider", { hu: "Szolgáltató" }),
@@ -576,6 +732,7 @@ function normalizeTextKey(value) {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/[.!?]+$/g, "")
+    .trim()
     .toLowerCase();
 }
 
@@ -631,13 +788,13 @@ function applyPatternTranslation(text, language) {
   const addToMatch = normalized.match(/^ajouter\s+[a]\s+(.+)$/);
   if (addToMatch) {
     const target = text.replace(/^Ajouter\s+[àa]\s+/i, "");
-    return language === "en" ? `Add to ${target}` : `Add to ${target}`;
+    return language === "hu" ? `Hozzáadás: ${target}` : `Add to ${target}`;
   }
 
   const fallbackMatch = normalized.match(/^non trouve\s*-\s*ouvrir\s+(.+)$/);
   if (fallbackMatch) {
     const target = text.replace(/^.*-\s*Ouvrir\s+/i, "");
-    return language === "en" ? `Not found - Open ${target}` : `Not found - Open ${target}`;
+    return language === "hu" ? `Nem található – megnyitás: ${target}` : `Not found - Open ${target}`;
   }
 
   const deleteLinkedMatch = normalized.match(
@@ -646,54 +803,54 @@ function applyPatternTranslation(text, language) {
   if (deleteLinkedMatch) {
     const count = Number(deleteLinkedMatch[1] || 0);
     const suffix = count > 1 ? "s" : "";
-    return language === "en"
-      ? `Also delete ${count} linked indexer${suffix} (automatic disable).`
+    return language === "hu"
+      ? `A(z) ${count} kapcsolódó indexelő is törlődjön (automatikus letiltás).`
       : `Also delete ${count} linked indexer${suffix} (automatic disable).`;
   }
 
   const lastSyncMatch = normalized.match(/^derniere synchro\s*:\s*(.+)$/);
   if (lastSyncMatch) {
     const target = text.replace(/^Derni(?:e|è)re synchro\s*:\s*/i, "");
-    return language === "en" ? `Last sync: ${target}` : `Last sync: ${target}`;
+    return language === "hu" ? `Utolsó szinkron: ${target}` : `Last sync: ${target}`;
   }
 
   const deleteDuplicateReleasesMatch = normalized.match(/^cette action va supprimer (\d+) releases en double$/);
   if (deleteDuplicateReleasesMatch) {
     const count = Number(deleteDuplicateReleasesMatch[1] || 0);
-    return language === "en"
-      ? `This action will delete ${count} duplicate releases.`
+    return language === "hu"
+      ? `Ez a művelet ${count} duplikált release-t töröl.`
       : `This action will delete ${count} duplicate releases.`;
   }
 
   const selectedCategoriesMatch = normalized.match(/^categories retenues\s*\((\d+)\s*\/\s*(\d+)\)$/);
   if (selectedCategoriesMatch) {
-    return language === "en"
-      ? `Selected categories (${selectedCategoriesMatch[1]}/${selectedCategoriesMatch[2]})`
+    return language === "hu"
+      ? `Kiválasztott kategóriák (${selectedCategoriesMatch[1]}/${selectedCategoriesMatch[2]})`
       : `Selected categories (${selectedCategoriesMatch[1]}/${selectedCategoriesMatch[2]})`;
   }
 
   if (/^cette action remplace la base actuelle par la sauvegarde\s*:?\s*$/.test(normalized)) {
-    return language === "en"
-      ? "This action replaces the current database with backup:"
+    return language === "hu"
+      ? "Ez a művelet a jelenlegi adatbázist lecseréli erre a mentésre:"
       : "This action replaces the current database with backup:";
   }
 
   if (/^cette action va supprimer la sauvegarde\s*:?\s*$/.test(normalized)) {
-    return language === "en"
-      ? "This action will delete backup:"
+    return language === "hu"
+      ? "Ez a művelet törli ezt a mentést:"
       : "This action will delete backup:";
   }
 
   if (/^plus vieux que \(jours\)/.test(normalized)) {
-    return language === "en"
-      ? "Older than (days)"
+    return language === "hu"
+      ? "Régebbi mint (nap)"
       : "Older than (days)";
   }
 
   const deletedEntriesMatch = normalized.match(/^(\d+)\s+entrees supprimees$/);
   if (deletedEntriesMatch) {
     const count = Number(deletedEntriesMatch[1] || 0);
-    return language === "en" ? `${count} entries deleted` : `${count} entries deleted`;
+    return language === "hu" ? `${count} bejegyzés törölve` : `${count} entries deleted`;
   }
 
   const deletedScannedFreedMatch = normalized.match(/^(\d+)\s+supprimes?\s*\/\s*(\d+)\s+scannes?\s*\((.+)\s+liberes\)$/);
@@ -701,8 +858,8 @@ function applyPatternTranslation(text, language) {
     const deleted = deletedScannedFreedMatch[1];
     const scanned = deletedScannedFreedMatch[2];
     const freed = deletedScannedFreedMatch[3];
-    return language === "en"
-      ? `${deleted} deleted / ${scanned} scanned (${freed} freed)`
+    return language === "hu"
+      ? `${deleted} törölve / ${scanned} átnézve (${freed} felszabadítva)`
       : `${deleted} deleted / ${scanned} scanned (${freed} freed)`;
   }
 
@@ -710,16 +867,16 @@ function applyPatternTranslation(text, language) {
   if (groupsDuplicatesMatch) {
     const groups = groupsDuplicatesMatch[1];
     const duplicates = groupsDuplicatesMatch[2];
-    return language === "en"
-      ? `${groups} groups, ${duplicates} duplicates detected`
+    return language === "hu"
+      ? `${groups} csoport, ${duplicates} duplikátum található`
       : `${groups} groups, ${duplicates} duplicates detected`;
   }
 
   const deletedDuplicatesMatch = normalized.match(/^(\d+)\s+doublons supprimes$/);
   if (deletedDuplicatesMatch) {
     const count = deletedDuplicatesMatch[1];
-    return language === "en"
-      ? `${count} duplicates deleted`
+    return language === "hu"
+      ? `${count} duplikátum törölve`
       : `${count} duplicates deleted`;
   }
 
@@ -901,4 +1058,9 @@ export function disposeRuntimeTranslation() {
   }
   languageListener = null;
   initialized = false;
+}
+
+/** Translates one French UI string to the active language (for text built in code). */
+export function translateUiText(text, uiLanguage = getActiveUiLanguage()) {
+  return translateTextContent(text, getLanguageCode(uiLanguage));
 }

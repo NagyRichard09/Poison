@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>Poisonarr</title>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="70%">
+      <stop offset="0" stop-color="#3a1d5c"/>
+      <stop offset="0.55" stop-color="#1d0f33"/>
+      <stop offset="1" stop-color="#0c0618"/>
+    </radialGradient>
+    <linearGradient id="liquid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d4ff4a"/>
+      <stop offset="0.45" stop-color="#5df03a"/>
+      <stop offset="1" stop-color="#139a3f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="62%" r="50%">
+      <stop offset="0" stop-color="#7dff4f" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#7dff4f" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cork" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b48cff"/>
+      <stop offset="1" stop-color="#6d3fd6"/>
+    </linearGradient>
+    <clipPath id="badge"><circle cx="256" cy="256" r="244"/></clipPath>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b6ff3b"/>
+      <stop offset="0.5" stop-color="#3fdc6a"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <clipPath id="flaskInside">
+      <path d="M226 168 V226 A112 112 0 1 0 286 226 V168 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- badge -->
+  <circle cx="256" cy="256" r="244" fill="url(#bg)"/>
+  <circle cx="256" cy="330" r="190" fill="url(#glow)" clip-path="url(#badge)"/>
+  <circle cx="256" cy="256" r="236" fill="none" stroke="url(#ring)" stroke-opacity="0.8" stroke-width="8"/>
+
+  <g transform="translate(256 292) scale(1.2) translate(-256 -292)">
+  <!-- liquid -->
+  <g clip-path="url(#flaskInside)">
+    <rect x="120" y="150" width="272" height="300" fill="#2a1446" opacity="0.55"/>
+    <path d="M120 268 C160 248 196 286 236 268 S310 248 350 266 S392 270 392 270 V460 H120 Z" fill="url(#liquid)"/>
+    <!-- skull -->
+    <g fill="#1d0f33">
+      <path d="M256 290 c-36 0 -60 24 -60 56 c0 20 9 33 22 41 v17 c0 6 5 10 10 10 h56 c5 0 10 -4 10 -10 v-17 c13 -8 22 -21 22 -41 c0 -32 -24 -56 -60 -56 Z"/>
+    </g>
+    <g fill="#8dff5a">
+      <ellipse cx="233" cy="348" rx="15" ry="17"/>
+      <ellipse cx="279" cy="348" rx="15" ry="17"/>
+      <path d="M256 368 l-9 16 h18 Z"/>
+      <rect x="236" y="400" width="8" height="14" rx="2"/>
+      <rect x="252" y="400" width="8" height="14" rx="2"/>
+      <rect x="268" y="400" width="8" height="14" rx="2"/>
+    </g>
+  </g>
+
+
+  <!-- glass -->
+  <path d="M226 160 V226 A112 112 0 1 0 286 226 V160" fill="none" stroke="#efe6ff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- lip + cork -->
+  <rect x="212" y="146" width="88" height="18" rx="9" fill="#efe6ff"/>
+  <path d="M230 96 h52 a6 6 0 0 1 6 6 v46 h-64 v-46 a6 6 0 0 1 6 -6 Z" fill="url(#cork)"/>
+  <rect x="236" y="104" width="10" height="34" rx="5" fill="#ffffff" opacity="0.35"/>
+
+  </g>
+</svg>

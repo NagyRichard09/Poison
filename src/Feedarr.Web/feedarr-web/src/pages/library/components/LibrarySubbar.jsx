@@ -162,7 +162,7 @@ export default function LibrarySubbar({
           <option value="date">Date</option>
           <option value="seeders">Seeders</option>
           <option value="downloads">Téléchargé</option>
-          <option value="rating">Értékelés (IMDb)</option>
+          <option value="rating">Note (IMDb)</option>
         </SubSelectIcon>
 
         {/* VIEW */}
@@ -318,10 +318,10 @@ export default function LibrarySubbar({
               value={hun}
               active={!!hun}
               onChange={(e) => setHun(e.target.value)}
-              title="Magyar hang / felirat"
+              title="Audio / sous-titres hongrois"
             >
-              <option value="">Minden nyelv</option>
-              <option value="1">🇭🇺 Csak magyar</option>
+              <option value="">Toutes les langues</option>
+              <option value="1">🇭🇺 Hongrois uniquement</option>
             </SubSelectIcon>
           )}
 

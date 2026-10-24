@@ -1,8 +1,12 @@
 <p align="center">
-  <img src="docs/screenshots/logo.png" alt="Logo Feedarr" width="120" />
+  <img src="docs/screenshots/logo.png" alt="Logo Poisonarr" width="120" />
 </p>
 
-<h1 align="center">Feedarr</h1>
+<h1 align="center">Poisonarr</h1>
+
+<p align="center">
+  <strong>Poisonarr</strong> est un fork de <a href="https://github.com/Guizmos/Feedarr">Feedarr</a> par Guizmos, avec l'intégration Seerr, un centre d'applications et un installateur Proxmox natif. Voir <a href="README.hu.md">README.hu.md</a>.<br/>
+</p>
 
 <p align="center">
   <strong>Feedarr v2 — Architecture Monolithique</strong><br/>

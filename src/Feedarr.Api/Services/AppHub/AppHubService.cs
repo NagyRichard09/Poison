@@ -139,6 +139,16 @@ public sealed class AppHubService
     {
         var p = port ?? def.DefaultPort;
         var basePath = string.IsNullOrWhiteSpace(urlBase) ? "" : urlBase;
+        if (def.Type == "plex")
+        {
+            // Plex Web lives under /web and refuses to be framed: always a new tab.
+            return new AppLink
+            {
+                Id = def.Type, Name = def.Name, Type = def.Type,
+                Url = $"http://{{host}}:{p}/web", InternalUrl = $"http://127.0.0.1:{p}",
+                OpenMode = "tab", Enabled = true
+            };
+        }
         return new AppLink
         {
             Id = def.Type,
@@ -243,10 +253,12 @@ public sealed class AppHubService
     // Auto setup
     // ------------------------------------------------------------------ //
 
-    public async Task<List<AutoSetupStep>> AutoSetupAsync(AutoSetupOptions o, CancellationToken ct)
+    public async Task<List<AutoSetupStep>> AutoSetupAsync(AutoSetupOptions o, CancellationToken ct, IReadOnlyCollection<string>? onlyTypes = null)
     {
         var steps = new List<AutoSetupStep>();
-        var found = Discover().ToDictionary(d => d.Type, StringComparer.OrdinalIgnoreCase);
+        var found = Discover()
+            .Where(d => onlyTypes is null || onlyTypes.Contains(d.Type, StringComparer.OrdinalIgnoreCase))
+            .ToDictionary(d => d.Type, StringComparer.OrdinalIgnoreCase);
         if (found.Count == 0)
         {
             steps.Add(new AutoSetupStep("discover", false,
@@ -295,7 +307,7 @@ public sealed class AppHubService
                 }
                 if (_arrApps.ListByType(app.Type).Any())
                 {
-                    steps.Add(new AutoSetupStep($"feedarr-{app.Type}", true, $"{app.Name} már be van állítva a Feedarr-ban."));
+                    steps.Add(new AutoSetupStep($"feedarr-{app.Type}", true, $"{app.Name} már be van állítva a Poisonarr-ban."));
                     continue;
                 }
                 var isSonarr = app.Type == "sonarr";
@@ -306,7 +318,7 @@ public sealed class AppHubService
                     monitorMode: isSonarr ? "all" : null, searchMissing: true, searchCutoff: false,
                     minimumAvailability: isSonarr ? null : "released", searchForMovie: true);
                 _arrApps.SetDefault(id);
-                steps.Add(new AutoSetupStep($"feedarr-{app.Type}", true, $"{app.Name} hozzáadva a Feedarr alkalmazásokhoz."));
+                steps.Add(new AutoSetupStep($"feedarr-{app.Type}", true, $"{app.Name} hozzáadva a Poisonarr alkalmazásokhoz."));
             }
         }
 
@@ -321,7 +333,7 @@ public sealed class AppHubService
             {
                 _providers.UpsertByType("prowlarr", "Prowlarr", Internal(prowlarr), prowlarr.ApiKey!, enabled: true);
                 steps.Add(new AutoSetupStep("feedarr-prowlarr", true,
-                    "Prowlarr beállítva fournisseur-ként. Az indexereket a Feedarr Indexerek oldalán választhatod ki."));
+                    "Prowlarr beállítva fournisseur-ként. Az indexereket a Poisonarr Indexerek oldalán választhatod ki."));
             }
         }
 

@@ -4,15 +4,28 @@
 
 ### Features
 
+* **plex:** a Plex Media Server is települ (hivatalos `repo.plex.tv` tároló), a varázsló vele kezd: claim kóddal a Plex fiókhoz rendelés, szervernév, „Filmek” és „Sorozatok” könyvtár magyar metaadatokkal; oldalsáv menüpont, `poisonarr update plex`
+* **branding:** új, méreg témájú Poisonarr logó és ikonok (böngészőfül, telefonos ikon, fejléc)
+* **branding:** a program új neve **Poisonarr** (felület, böngésző fül, értesítések, telepítő, `poisonarr` parancs). A belső nevek (szolgáltatás, mappák, kulcsok) változatlanok, így a meglévő telepítés és adatok megmaradnak.
 * **app-hub:** „Alkalmazások” oldalsáv menü (Seerr, Prowlarr, Sonarr, Radarr, Tautulli, qBittorrent), beágyazott nézet, elérhetőség- és beágyazhatóság-figyelés
 * **app-hub:** automatikus összekötés – API kulcsok kiolvasása a config mappákból; Prowlarr/Sonarr/Radarr → Feedarr, Prowlarr → Sonarr/Radarr, qBittorrent → Sonarr/Radarr, Seerr → Sonarr/Radarr, Seerr webhook
 * **storage:** Beállítások → Tárhely: szabad hely meghajtónként (csatolási pont szerint), egyéni mappák, főképernyő widget, kevés hely figyelmeztetés + értesítés
 * **proxmox:** natív (Docker nélküli) LXC telepítő mind a 7 alkalmazáshoz, `feedarr-stack` kezelő parancs
 * **seerr:** `MEDIA_AUTO_REQUESTED` (watchlist) események, `imdbId` a webhook sablonban
+* **stack-setup:** böngészős beállító varázsló (`/stack-setup`) a Proxmox stackhez: Radarr → Sonarr → Prowlarr → Seerr → qBittorrent → Tautulli → Feedarr sorrendben, egy közös felhasználónévvel és jelszóval, magyar felülettel; a Prowlarr, Seerr (Plex belépés) és Tautulli beágyazva nyílik meg
+* **i18n:** a Feedarr-ba épített új oldalak (Seerr kérések, Tárhely, Alkalmazás-központ, beágyazott alkalmazások) magyarul, angolul és franciául is
+
+### Bug Fixes
+
+* **i18n:** ~150 francia szöveg hiányzott a fordítási szótárból, magyar/angol nyelven félig lefordított mondatok jelentek meg (pl. „Rechercher dans la Könyvtár”)
+* **i18n:** a minta alapú fordítások (pl. „Utolsó szinkron”, „N duplikátum törölve”) magyar nyelven is angolul jelentek meg
+* **i18n:** a biztonsági beállítások magyar szövegei nem jelentek meg (`tSecurity` csak franciát/angolt adott vissza), 29 hiányzó magyar szöveg pótolva
+* **i18n:** a kérdőjel előtti francia szóköz („… source ?”) miatt a mondat nem volt lefordítva
+* **i18n:** a Top 24h összefoglaló és az RSS korlátok súgója szavanként, rossz szórenddel volt fordítva
 
 ### Updates
 
-* **runtime:** .NET 8 → .NET 10 (a .NET 8 támogatása 2026. november 10-én megszűnik); Microsoft.Data.Sqlite 10.0.13
+* **runtime:** .NET 8 → .NET 10 (a .NET 8 támogatása 2026. november 10-én megszűnik); Microsoft.Data.Sqlite 10.0.13, SQLitePCLRaw 2.1.13
 * **web:** npm biztonsági frissítések (13 → 0 ismert sérülékenység), React 19.3, React Router 7.18, Vite 7.3.7
 * **security:** elavult API-k cseréje (Rfc2898DeriveBytes.Pbkdf2, KnownIPNetworks)
 

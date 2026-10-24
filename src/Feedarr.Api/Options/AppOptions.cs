@@ -28,6 +28,13 @@ public sealed class AppOptions
     /// </summary>
     public string AppConfigRoot { get; set; } = "/appconfig";
 
+    /// <summary>
+    /// true when Feedarr was installed by the Proxmox stack installer together with
+    /// Radarr, Sonarr, Prowlarr, Seerr, qBittorrent and Tautulli: the first-run wizard
+    /// then starts with the stack setup (/stack-setup).
+    /// </summary>
+    public bool StackMode { get; set; }
+
     /// <summary>URL under which the other containers reach Feedarr (Seerr webhook auto-setup).</summary>
     public string? InternalUrl { get; set; }
 }

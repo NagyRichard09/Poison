@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  MonitorPlay,
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
@@ -118,6 +119,7 @@ const ICON_MAP = {
   open_in_new: ExternalLink,
   radar: Radar,
   popcorn: Popcorn,
+  plex: MonitorPlay,
   hard_drive: HardDrive,
   apps: AppWindow,
   auto_fix: WandSparkles,

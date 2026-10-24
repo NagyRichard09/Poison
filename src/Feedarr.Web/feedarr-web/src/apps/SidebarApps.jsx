@@ -1,12 +1,16 @@
 import React from "react";
+import { NO_RUNTIME_TRANSLATE, useL } from "../app/i18n.js";
 import { NavLink } from "react-router-dom";
 import AppIcon from "../ui/AppIcon.jsx";
 import useAppLinks from "./useAppLinks.js";
 import { appIcon, isSafeAppUrl, resolveAppUrl } from "./appLinks.js";
 
 function StatusDot({ status }) {
+  const L = useL();
   if (!status) return <span className="snav-app__dot" aria-hidden="true" />;
-  const label = status.online ? "Elérhető" : `Nem elérhető${status.error ? `: ${status.error}` : ""}`;
+  const label = status.online
+    ? L("Elérhető", "Online", "En ligne")
+    : `${L("Nem elérhető", "Offline", "Hors ligne")}${status.error ? `: ${status.error}` : ""}`;
   return (
     <span
       className={`snav-app__dot ${status.online ? "is-online" : "is-offline"}`}
@@ -19,24 +23,25 @@ function StatusDot({ status }) {
 
 /**
  * Sidebar "Alkalmazások" section: one entry per enabled app link.
- * Embedded apps open at /apps/:id inside Feedarr, the others in a new tab.
+ * Embedded apps open at /apps/:id inside Poisonarr, the others in a new tab.
  */
 export default function SidebarApps({ onNavigate }) {
+  const L = useL();
   const { links, statusById, loaded } = useAppLinks();
   const enabled = links.filter((l) => l.enabled !== false && isSafeAppUrl(l.url));
 
   return (
-    <div className="snav-apps">
+    <div className="snav-apps" {...NO_RUNTIME_TRANSLATE}>
       <div className="snav-apps__head">
-        <span>Alkalmazások</span>
-        <NavLink to="/settings/hub" className="snav-apps__manage" title="Alkalmazások kezelése" onClick={onNavigate}>
+        <span>{L("Alkalmazások", "Apps", "Applications")}</span>
+        <NavLink to="/settings/hub" className="snav-apps__manage" title={L("Alkalmazások kezelése", "Manage apps", "Gérer les applications")} onClick={onNavigate}>
           <AppIcon name="settings" />
         </NavLink>
       </div>
 
       {loaded && enabled.length === 0 && (
         <NavLink to="/settings/hub" className="snav__subitem snav-apps__empty" onClick={onNavigate}>
-          + Alkalmazások beállítása
+          + {L("Alkalmazások beállítása", "Set up apps", "Configurer les applications")}
         </NavLink>
       )}
 

@@ -99,7 +99,7 @@ public sealed class NotificationService
     public Task<List<NotificationChannelResult>> SendTestAsync(NotificationSettings settings, CancellationToken ct)
         => SendAsync(settings, new NotificationMessage(
             NotificationEventKind.Test,
-            "Feedarr teszt értesítés",
+            "Poisonarr teszt értesítés",
             "Ha ezt látod, az értesítések működnek. ✅"), ct);
 
     public static bool HasAnyChannel(NotificationSettings s)
@@ -162,14 +162,14 @@ public sealed class NotificationService
             ["url"] = IsHttpUrl(m.Url) ? m.Url : null,
             ["color"] = m.IsError ? 0xA32D2D : ColorFor(m.Kind),
             ["timestamp"] = DateTimeOffset.UtcNow.ToString("O"),
-            ["footer"] = new Dictionary<string, object?> { ["text"] = "Feedarr" },
+            ["footer"] = new Dictionary<string, object?> { ["text"] = "Poisonarr" },
         };
         if (IsHttpUrl(m.ImageUrl))
             embed["thumbnail"] = new Dictionary<string, object?> { ["url"] = m.ImageUrl };
 
         var payload = new Dictionary<string, object?>
         {
-            ["username"] = "Feedarr",
+            ["username"] = "Poisonarr",
             ["embeds"] = new[] { WithoutNulls(embed) }
         };
 

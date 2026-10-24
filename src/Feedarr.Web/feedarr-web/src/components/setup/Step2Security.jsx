@@ -242,7 +242,7 @@ export default function Step2Security({ required = false, onStatusChange, saveRe
   return (
     <div className="setup-step setup-security">
       <h2>{tr("Securite", "Security")}</h2>
-      <p>{tr("Configure le mode d'acces de Feedarr.", "Configure Feedarr access mode.")}</p>
+      <p>{tr("Configure le mode d'acces de Poisonarr.", "Configure Poisonarr access mode.")}</p>
 
       {loading && <div className="muted">{tr("Chargement...", "Loading...")}</div>}
 

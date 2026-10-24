@@ -156,7 +156,7 @@ public sealed class ArrReleasePushService
             Size = r.SizeBytes is > 0 ? r.SizeBytes : null,
             Seeders = r.Seeders.HasValue ? (int)Math.Clamp(r.Seeders.Value, 0, int.MaxValue) : null,
             Leechers = r.Leechers.HasValue ? (int)Math.Clamp(r.Leechers.Value, 0, int.MaxValue) : null,
-            Indexer = string.IsNullOrWhiteSpace(r.SourceName) ? "Feedarr" : $"{r.SourceName} (Feedarr)",
+            Indexer = string.IsNullOrWhiteSpace(r.SourceName) ? "Poisonarr" : $"{r.SourceName} (Poisonarr)",
             PublishDate = published.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
             TmdbId = r.TmdbId is > 0 and <= int.MaxValue ? (int)r.TmdbId.Value : null,
             TvdbId = r.TvdbId is > 0 and <= int.MaxValue ? (int)r.TvdbId.Value : null,

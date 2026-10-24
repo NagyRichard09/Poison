@@ -261,7 +261,7 @@ export default function ReleaseModal({
         item?.extImdbScore > 0 ? { label: "IMDb", value: `⭐ ${Number(item.extImdbScore).toFixed(1)}${item.extImdbVotes > 0 ? " (" + Number(item.extImdbVotes).toLocaleString() + ")" : ""}` } : null,
         item?.extRtScore > 0   ? { label: "Rotten Tomatoes", value: `🍅 ${item.extRtScore}%` } : null,
         item?.extMetascore > 0 ? { label: "Metascore", value: `${item.extMetascore}/100` } : null,
-        item?.tagHun           ? { label: "Magyar hang/felirat", value: "🇭🇺 Igen" } : null,
+        item?.tagHun           ? { label: "Audio / sous-titres hongrois", value: "🇭🇺 Oui" } : null,
         { label: "Genres", value: item?.genres },
         { label: "Realisateur", value: item?.directors },
         { label: "Scenaristes", value: item?.writers },

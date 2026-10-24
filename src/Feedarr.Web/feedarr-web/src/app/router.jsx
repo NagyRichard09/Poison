@@ -16,6 +16,7 @@ const SystemIndexers = React.lazy(() => import("../pages/system/SystemIndexers.j
 const Settings = React.lazy(() => import("../pages/Settings.jsx"));
 const Providers = React.lazy(() => import("../pages/Providers.jsx"));
 const SetupWizard = React.lazy(() => import("../pages/SetupWizard.jsx"));
+const StackSetupWizard = React.lazy(() => import("../pages/stack/StackSetupWizard.jsx"));
 const SeerrRequestsPage = React.lazy(() => import("../pages/seerr/SeerrRequestsPage.jsx"));
 const AppEmbedPage = React.lazy(() => import("../pages/apps/AppEmbedPage.jsx"));
 
@@ -51,6 +52,14 @@ export const router = createBrowserRouter([
     ],
   },
   {
+    path: "/stack-setup",
+    element: <SetupShell />,
+    errorElement: <RouteErrorBoundary />,
+    children: [
+      { index: true, element: withSuspense(<StackSetupWizard />, "Stack setup") },
+    ],
+  },
+  {
     path: "/",
     element: <Shell />,
     errorElement: <RouteErrorBoundary />,
@@ -77,9 +86,9 @@ export const router = createBrowserRouter([
       { path: "settings/users", element: withSuspense(<Settings />, "Utilisateurs") },
       { path: "settings/maintenance", element: withSuspense(<Settings />, "Maintenance") },
       { path: "settings/backup", element: withSuspense(<Settings />, "Sauvegardes") },
-      { path: "settings/storage", element: withSuspense(<Settings />, "Tárhely") },
-      { path: "settings/hub", element: withSuspense(<Settings />, "Alkalmazás-központ") },
-      { path: "apps/:id", element: withSuspense(<AppEmbedPage />, "Alkalmazás") },
+      { path: "settings/storage", element: withSuspense(<Settings />, "Stockage") },
+      { path: "settings/hub", element: withSuspense(<Settings />, "Centre d'applications") },
+      { path: "apps/:id", element: withSuspense(<AppEmbedPage />, "Application") },
       { path: "settings/about", element: <Navigate to="/system/updates" replace /> },
     ],
   },

@@ -206,8 +206,8 @@ export default function CategoryPreviewModal({ sourceId, previewCredentials, cat
                     `The request was sent for ${requestedCatId}${catName ? ` • ${catName}` : ""}, but the indexer classifies returned items in different categories. The "Item category" column always shows the raw value returned by the indexer.`
                   )
                 : tr(
-                    "Catégorie item: valeur brute remontée par l'indexeur pour chaque release. Aucune catégorie Feedarr n'est réappliquée ici.",
-                    "Item category: raw value returned by the indexer for each release. No Feedarr mapping is reapplied here."
+                    "Catégorie item: valeur brute remontée par l'indexeur pour chaque release. Aucune catégorie Poisonarr n'est réappliquée ici.",
+                    "Item category: raw value returned by the indexer for each release. No Poisonarr mapping is reapplied here."
                   )}
             </div>
             <table className="preview-table">

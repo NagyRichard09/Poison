@@ -45,7 +45,7 @@
       <NpmExe Condition="'$(OS)' != 'Windows_NT'">npm</NpmExe>
     </PropertyGroup>
 
-    <Message Importance="high" Text="Feedarr Web: building Vite app in '$(WebClientDir)'..." />
+    <Message Importance="high" Text="Poisonarr Web: building Vite app in '$(WebClientDir)'..." />
 
     <Exec WorkingDirectory="$(WebClientDir)" Command="cmd /c &quot;if not exist node_modules ($(NpmExe) ci)&quot;" Condition="'$(OS)' == 'Windows_NT'" />
     <Exec WorkingDirectory="$(WebClientDir)" Command="sh -lc &quot;test -d node_modules || $(NpmExe) ci&quot;" Condition="'$(OS)' != 'Windows_NT'" />
@@ -61,7 +61,7 @@
 
     <Copy SourceFiles="@(WebDistFiles)" DestinationFiles="@(WebDistFiles->'$(ProjectDir)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
 
-    <Message Importance="high" Text="Feedarr Web: copied dist -&gt; '$(ProjectDir)wwwroot'." />
+    <Message Importance="high" Text="Poisonarr Web: copied dist -&gt; '$(ProjectDir)wwwroot'." />
   </Target>
 
 </Project>

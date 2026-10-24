@@ -17,7 +17,7 @@ public sealed class MusicBrainzClient
 
     private const string MbBaseUrl = "https://musicbrainz.org/ws/2/";
     private const string CaaBaseUrl = "https://coverartarchive.org/";
-    private const string UserAgent = "Feedarr/1.0 ( https://github.com/Guizmos/feedarr )";
+    private const string UserAgent = "Poisonarr/1.0 ( https://github.com/Guizmos/feedarr )";
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {

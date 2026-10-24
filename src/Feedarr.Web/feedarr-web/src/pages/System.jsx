@@ -88,7 +88,7 @@ export default function System() {
               <div className="card-row card-row-fourth system-overview-cards">
                 <div className="card card-fourth">
                   <div className="card-title">Application</div>
-                  <div className="card-value">{status?.appName || "Feedarr"}</div>
+                  <div className="card-value">{status?.appName || "Poisonarr"}</div>
                   <div className="card-meta">
                     <div className="card-meta__row">
                       <span className="card-meta__label">Version</span>

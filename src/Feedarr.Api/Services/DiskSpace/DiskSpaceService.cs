@@ -242,7 +242,7 @@ public sealed class DiskSpaceService
         public DiskVolumeStatus Build(DiskSpaceSettings settings)
         {
             var displayPath = Paths.FirstOrDefault(p => !string.Equals(p, "/", StringComparison.Ordinal)) ?? MountPoint;
-            var label = Label ?? (IsDataDir ? "Feedarr adatok" : displayPath);
+            var label = Label ?? (IsDataDir ? "Poisonarr adatok" : displayPath);
             var freePercent = Total > 0 ? Math.Round(Free * 100.0 / Total, 1) : 0;
             return new DiskVolumeStatus(
                 displayPath, label, MountPoint, Free, Total, freePercent,

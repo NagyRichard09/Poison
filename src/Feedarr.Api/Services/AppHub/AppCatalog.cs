@@ -13,6 +13,7 @@ public static class AppCatalog
 {
     public static readonly IReadOnlyList<AppDefinition> All = new[]
     {
+        new AppDefinition("plex",        "Plex",        32400, "/identity",    "plexmediaserver", "plex"),
         new AppDefinition("seerr",       "Seerr",       5055, "/api/v1/status", "seerr",       "seerr"),
         new AppDefinition("prowlarr",    "Prowlarr",    9696, "/ping",          "prowlarr",    "prowlarr"),
         new AppDefinition("sonarr",      "Sonarr",      8989, "/ping",          "sonarr",      "sonarr"),

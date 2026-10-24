@@ -94,7 +94,7 @@ export default function Step0Language({ onStatusChange }) {
   return (
     <div className="setup-step setup-language">
       <h2>{tr("Langue", "Language")}</h2>
-      <p>{tr("Choisis la langue par defaut de Feedarr.", "Choose Feedarr default language.")}</p>
+      <p>{tr("Choisis la langue par defaut de Poisonarr.", "Choose Poisonarr default language.")}</p>
 
       <div className="setup-providers__add settings-row settings-row--ui-select">
         <label>{tr("Langue par defaut", "Default language")}</label>

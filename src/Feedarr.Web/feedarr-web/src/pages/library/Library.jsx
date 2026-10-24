@@ -1172,7 +1172,7 @@ export default function Library() {
         <div>
           <h1>{selectedSourceName}</h1>
           <div className="muted">
-            {err ? "—" : `Résultats: ${visibleItems.length}`}
+            {err ? "—" : <>Résultats: {visibleItems.length}</>}
           </div>
         </div>
         {(viewMode === "grid" || viewMode === "missing" || viewMode === "poster") && (

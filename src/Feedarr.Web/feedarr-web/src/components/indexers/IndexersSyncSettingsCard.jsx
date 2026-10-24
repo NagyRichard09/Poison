@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { pick } from "../../app/i18n.js";
 import { apiGet, apiPut } from "../../api/client.js";
 import Loader from "../../ui/Loader.jsx";
 import ToggleSwitch from "../../ui/ToggleSwitch.jsx";
@@ -230,7 +231,11 @@ export default function IndexersSyncSettingsCard({ onStateChange, showSaveButton
                 />
               </div>
             </div>
-            <div className="settings-help">Entre {RSS_PER_CAT.min} et {RSS_PER_CAT.max}. Remplissage progressif par catégorie, purge des plus anciens.</div>
+            <div className="settings-help" data-no-ui-translate="1">{pick(
+              `${RSS_PER_CAT.min} és ${RSS_PER_CAT.max} között. Kategóriánként fokozatosan töltődik, a legrégebbiek törlődnek.`,
+              `Between ${RSS_PER_CAT.min} and ${RSS_PER_CAT.max}. Filled progressively per category, oldest items are purged.`,
+              `Entre ${RSS_PER_CAT.min} et ${RSS_PER_CAT.max}. Remplissage progressif par catégorie, purge des plus anciens.`
+            )}</div>
           </div>
 
           <div className={`indexer-card${pulseClass("general.rssGlobal")}`}>
@@ -254,7 +259,11 @@ export default function IndexersSyncSettingsCard({ onStateChange, showSaveButton
                 />
               </div>
             </div>
-            <div className="settings-help">Entre {RSS_GLOBAL.min} et {RSS_GLOBAL.max}. Plafond global par source (≥ limite par catégorie), purge des plus anciens.</div>
+            <div className="settings-help" data-no-ui-translate="1">{pick(
+              `${RSS_GLOBAL.min} és ${RSS_GLOBAL.max} között. Forrásonkénti felső korlát (≥ kategóriánkénti korlát), a legrégebbiek törlődnek.`,
+              `Between ${RSS_GLOBAL.min} and ${RSS_GLOBAL.max}. Global cap per source (≥ per-category limit), oldest items are purged.`,
+              `Entre ${RSS_GLOBAL.min} et ${RSS_GLOBAL.max}. Plafond global par source (≥ limite par catégorie), purge des plus anciens.`
+            )}</div>
           </div>
 
           {!isValid && (

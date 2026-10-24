@@ -645,7 +645,7 @@ public sealed class BackupService
     {
         return new
         {
-            app = "Feedarr",
+            app = "Feedarr", // keep: backup compatibility (product renamed to Poisonarr)
             version = appVersion,
             environment = _env.EnvironmentName,
             createdAt = new DateTimeOffset(createdAtUtc).ToUnixTimeSeconds(),

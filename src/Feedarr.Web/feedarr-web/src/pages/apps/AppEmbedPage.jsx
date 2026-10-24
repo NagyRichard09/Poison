@@ -6,9 +6,11 @@ import AppIcon from "../../ui/AppIcon.jsx";
 import Loader from "../../ui/Loader.jsx";
 import useAppLinks from "../../apps/useAppLinks.js";
 import { appIcon, isMixedContent, isSafeAppUrl, resolveAppUrl } from "../../apps/appLinks.js";
+import { NO_RUNTIME_TRANSLATE, useL } from "../../app/i18n.js";
 
-/** Shows one of the user's apps (Sonarr, Radarr, ...) inside Feedarr. */
+/** Shows one of the user's apps (Sonarr, Radarr, ...) inside Poisonarr. */
 export default function AppEmbedPage() {
+  const L = useL();
   const { id } = useParams();
   const setContent = useSubbarSetter();
   const { links, statusById, loaded } = useAppLinks();
@@ -22,38 +24,39 @@ export default function AppEmbedPage() {
 
   useEffect(() => {
     setContent(
-      <div className="settings-subbar-content">
+      <div className="settings-subbar-content" {...NO_RUNTIME_TRANSLATE}>
         <div className="appembed__title">
           {link && <AppIcon name={appIcon(link.type)} />}
-          <span>{link?.name || "Alkalmazás"}</span>
+          <span>{link?.name || L("Alkalmazás", "App", "Application")}</span>
           {status && (
             <span className={`appembed__status ${status.online ? "is-online" : "is-offline"}`}>
-              {status.online ? "elérhető" : "nem elérhető"}
+              {status.online ? L("elérhető", "online", "en ligne") : L("nem elérhető", "offline", "hors ligne")}
             </span>
           )}
         </div>
         <div className="subspacer" />
-        <SubAction icon="refresh" label="Újratöltés" onClick={() => setFrameKey((k) => k + 1)} disabled={!url} />
+        <SubAction icon="refresh" label={L("Újratöltés", "Reload", "Recharger")} onClick={() => setFrameKey((k) => k + 1)} disabled={!url} />
         <SubAction
           icon="open_in_new"
-          label="Új lapon"
+          label={L("Új lapon", "New tab", "Nouvel onglet")}
           onClick={() => url && window.open(url, "_blank", "noopener,noreferrer")}
           disabled={!url}
         />
       </div>
     );
     return () => setContent(null);
-  }, [setContent, link, url, status]);
+  }, [setContent, link, url, status, L]);
 
-  if (!loaded) return <Loader label="Betöltés…" />;
+  if (!loaded) return <Loader label={L("Betöltés…", "Loading…", "Chargement…")} />;
 
   if (!link || !url) {
     return (
-      <div className="page">
+      <div className="page" {...NO_RUNTIME_TRANSLATE}>
         <div className="errorbox">
-          <div className="errorbox__title">Ismeretlen alkalmazás</div>
+          <div className="errorbox__title">{L("Ismeretlen alkalmazás", "Unknown app", "Application inconnue")}</div>
           <div className="muted">
-            Ez az alkalmazás nincs beállítva. <Link to="/settings/hub">Alkalmazások kezelése</Link>
+            {L("Ez az alkalmazás nincs beállítva.", "This app is not configured.", "Cette application n'est pas configurée.")}{" "}
+            <Link to="/settings/hub">{L("Alkalmazások kezelése", "Manage apps", "Gérer les applications")}</Link>
           </div>
         </div>
       </div>
@@ -61,16 +64,23 @@ export default function AppEmbedPage() {
   }
 
   return (
-    <div className="appembed">
+    <div className="appembed" {...NO_RUNTIME_TRANSLATE}>
       {(blocked || mixed) && (
         <div className="appembed__notice">
           {mixed
-            ? "A Feedarr HTTPS-en fut, az alkalmazás HTTP-n: a böngésző nem engedi beágyazni. "
-            : `A(z) ${link.name} nem engedi a beágyazást (X-Frame-Options / frame-ancestors). `}
-          <a href={url} target="_blank" rel="noopener noreferrer">Megnyitás új lapon</a>
-          {" "}vagy állítsd „új lap” módra az <Link to="/settings/hub">Alkalmazások</Link> között.
+            ? L("A Poisonarr HTTPS-en fut, az alkalmazás HTTP-n: a böngésző nem engedi beágyazni. ",
+                "Poisonarr runs on HTTPS and the app on HTTP: the browser refuses to embed it. ",
+                "Poisonarr est en HTTPS et l'application en HTTP : le navigateur refuse de l'intégrer. ")
+            : L(`A(z) ${link.name} nem engedi a beágyazást (X-Frame-Options / frame-ancestors). `,
+                `${link.name} does not allow embedding (X-Frame-Options / frame-ancestors). `,
+                `${link.name} n'autorise pas l'intégration (X-Frame-Options / frame-ancestors). `)}
+          <a href={url} target="_blank" rel="noopener noreferrer">{L("Megnyitás új lapon", "Open in a new tab", "Ouvrir dans un nouvel onglet")}</a>
+          {" "}{L("vagy állítsd „új lap” módra itt:", "or switch it to “new tab” mode in", "ou passez-la en mode « nouvel onglet » dans")}{" "}
+          <Link to="/settings/hub">{L("Alkalmazások", "Apps", "Applications")}</Link>.
           {link.type === "qbittorrent" && !mixed && (
-            <> qBittorrentnél: Beállítások → Web UI → „Clickjacking védelem” kikapcsolása.</>
+            <> {L("qBittorrentnél: Beállítások → Web UI → „Clickjacking védelem” kikapcsolása.",
+                "In qBittorrent: Options → Web UI → turn off “clickjacking protection”.",
+                "Dans qBittorrent : Options → Web UI → désactiver la « protection clickjacking ».")}</>
           )}
         </div>
       )}

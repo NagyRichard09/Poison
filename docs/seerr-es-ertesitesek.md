@@ -8,12 +8,12 @@ Seerr → **Settings → Notifications → Webhook**
 |---|---|
 | Webhook URL | `http(s)://<feedarr>/api/seerr/webhook` |
 | JSON Payload | *Default* (az alapértelmezett sablon tartalmazza az `image` és `{{extra}}` mezőket) |
-| Authorization Header | ha a Feedarr hitelesítést használ: `Basic <base64(felhasználó:jelszó)>` |
+| Authorization Header | ha a Poisonarr hitelesítést használ: `Basic <base64(felhasználó:jelszó)>` |
 | Notification Types | Request Pending, Request Automatically Approved, Request Approved, Request Available, Request Declined |
 
 Több Seerr példány esetén opcionálisan `X-Feedarr-AppId` fejléc adható meg.
 
-A Feedarr eltárolja:
+A Poisonarr eltárolja:
 - a kérés állapotát (függőben → jóváhagyva → elérhető; ugyanaz a sor frissül, nincs duplikáció),
 - a posztert (`image`) és sorozatnál a kért évadokat (`extra` → „Requested Seasons”).
 
@@ -32,7 +32,7 @@ Kérésenként: **Keresés / Újraegyeztetés**, **Törlés**, egyezés után **
 
 ## 3. Küldés Sonarr/Radarr-ba (release push)
 
-A Feedarr a Sonarr/Radarr `POST /api/v3/release/push` végpontjára küldi a release-t
+A Poisonarr a Sonarr/Radarr `POST /api/v3/release/push` végpontjára küldi a release-t
 (cím, letöltési link vagy magnet, méret, seederek, indexer, TMDB/TVDB ID). A Sonarr/Radarr
 a saját minőségprofilja alapján dönt: az eredmény (elfogadva / elutasítva + ok) a kérésnél látszik.
 
@@ -55,7 +55,7 @@ Seerr oldal → **⚙️ Beállítások → Értesítések**
 
 Események: új Seerr kérés, megérkezett a kért tartalom, Sonarr/Radarr küldés eredménye.
 A **Teszt értesítés** gomb a még el nem mentett értékekkel is működik. A titkos értékeket
-(URL-ek, token) a Feedarr titkosítva tárolja, és az API soha nem adja vissza.
+(URL-ek, token) a Poisonarr titkosítva tárolja, és az API soha nem adja vissza.
 
 API: `GET/PUT /api/notifications/settings`, `POST /api/notifications/test`
 
@@ -87,11 +87,11 @@ API: `GET /api/system/disk-space`, `GET/PUT /api/system/disk-space/settings`
 
 **Beállítások → Alkalmazás-központ** és az oldalsáv „Alkalmazások” szakasza.
 
-- Menüpont alkalmazásonként: böngésző URL (`http://{host}:8989` – a `{host}` a Feedarr
-  címére cserélődik), belső URL az állapotfigyeléshez, megnyitás a Feedarr-on belül vagy új lapon.
+- Menüpont alkalmazásonként: böngésző URL (`http://{host}:8989` – a `{host}` a Poisonarr
+  címére cserélődik), belső URL az állapotfigyeléshez, megnyitás a Poisonarr-on belül vagy új lapon.
 - Zöld/piros pötty: elérhető-e az alkalmazás (percenként frissül).
-- Ha egy alkalmazás tiltja a beágyazást (`X-Frame-Options`), a Feedarr jelzi; ilyenkor „új lap” mód.
-- **Automatikus összekötés**: a Feedarr az `App:AppConfigRoot` mappában (natív telepítésnél
+- Ha egy alkalmazás tiltja a beágyazást (`X-Frame-Options`), a Poisonarr jelzi; ilyenkor „új lap” mód.
+- **Automatikus összekötés**: a Poisonarr az `App:AppConfigRoot` mappában (natív telepítésnél
   `/var/lib`) megkeresi a `sonarr/config.xml`, `radarr/config.xml`, `prowlarr/config.xml`,
   `seerr/settings.json`, `tautulli/config.ini` fájlokat, kiolvassa az API kulcsokat, és
   beköti az alkalmazásokat egymáshoz. Meglévő beállítást nem ír felül.

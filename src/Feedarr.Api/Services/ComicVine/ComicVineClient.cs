@@ -8,7 +8,7 @@ namespace Feedarr.Api.Services.ComicVine;
 
 public sealed class ComicVineClient
 {
-    private const string UserAgent = "Feedarr/1.0";
+    private const string UserAgent = "Poisonarr/1.0";
 
     public sealed record ComicResult(
         string ProviderId,

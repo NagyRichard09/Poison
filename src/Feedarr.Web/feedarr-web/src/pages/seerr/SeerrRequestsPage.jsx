@@ -1,15 +1,17 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { apiDelete, apiGet, apiPost } from "../../api/client.js";
 import SeerrSettingsPanel from "./SeerrSettingsPanel.jsx";
+import { NO_RUNTIME_TRANSLATE, pick, useL } from "../../app/i18n.js";
 
+// [hu, en, fr]
 const TYPE_LABELS = {
-  MEDIA_PENDING: "Függőben",
-  MEDIA_APPROVED: "Jóváhagyva",
-  MEDIA_AUTO_APPROVED: "Automatikusan jóváhagyva",
-  MEDIA_AVAILABLE: "Elérhető",
-  MEDIA_DECLINED: "Elutasítva",
-  MEDIA_FAILED: "Sikertelen",
-  MEDIA_AUTO_REQUESTED: "Watchlist kérés",
+  MEDIA_PENDING: ["Függőben", "Pending", "En attente"],
+  MEDIA_APPROVED: ["Jóváhagyva", "Approved", "Approuvée"],
+  MEDIA_AUTO_APPROVED: ["Automatikusan jóváhagyva", "Auto-approved", "Approuvée automatiquement"],
+  MEDIA_AVAILABLE: ["Elérhető", "Available", "Disponible"],
+  MEDIA_DECLINED: ["Elutasítva", "Declined", "Refusée"],
+  MEDIA_FAILED: ["Sikertelen", "Failed", "Échec"],
+  MEDIA_AUTO_REQUESTED: ["Watchlist kérés", "Watchlist request", "Demande watchlist"],
 };
 
 // Plain hex colors: an alpha suffix is appended (color + "22"), which would be
@@ -26,9 +28,9 @@ const TYPE_COLORS = {
 const FALLBACK_TYPE_COLOR = "#6B7280";
 
 const PUSH_LABELS = {
-  approved: { text: "Elküldve – elfogadva", color: "#0F6E56" },
-  rejected: { text: "Elküldve – elutasítva", color: "#8A6D1F" },
-  error: { text: "Küldési hiba", color: "#A32D2D" },
+  approved: { text: ["Elküldve – elfogadva", "Sent – accepted", "Envoyée – acceptée"], color: "#0F6E56" },
+  rejected: { text: ["Elküldve – elutasítva", "Sent – rejected", "Envoyée – rejetée"], color: "#8A6D1F" },
+  error: { text: ["Küldési hiba", "Send error", "Erreur d'envoi"], color: "#A32D2D" },
 };
 
 const btn = {
@@ -38,7 +40,7 @@ const btn = {
 
 function fmtTs(ts) {
   if (!ts) return "—";
-  return new Date(ts * 1000).toLocaleString("hu-HU");
+  return new Date(ts * 1000).toLocaleString(pick("hu-HU", "en-US", "fr-FR"));
 }
 
 function fmtSize(bytes) {
@@ -62,10 +64,12 @@ function Badge({ text, color }) {
 }
 
 function TypeBadge({ type }) {
-  return <Badge text={TYPE_LABELS[type] || type || "—"} color={TYPE_COLORS[type] || FALLBACK_TYPE_COLOR} />;
+  const label = TYPE_LABELS[type];
+  return <Badge text={label ? pick(...label) : type || "—"} color={TYPE_COLORS[type] || FALLBACK_TYPE_COLOR} />;
 }
 
 function MediaTypeBadge({ type }) {
+  const L = useL();
   return (
     <span style={{
       fontSize: 10, fontWeight: 500, padding: "1px 6px", borderRadius: 3,
@@ -74,7 +78,7 @@ function MediaTypeBadge({ type }) {
       color: type === "tv" ? "var(--accent-purple, #534AB7)"
                            : "var(--accent-blue, #185FA5)",
     }}>
-      {type === "tv" ? "Sorozat" : "Film"}
+      {type === "tv" ? L("Sorozat", "Series", "Série") : L("Film", "Movie", "Film")}
     </span>
   );
 }
@@ -92,6 +96,7 @@ function StatTile({ label, value, color }) {
 }
 
 function RequestCard({ req, busy, onAction }) {
+  const L = useL();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const push = req.arrPushStatus ? PUSH_LABELS[req.arrPushStatus] : null;
   const isBusy = (action) => busy === `${action}:${req.id}`;
@@ -125,18 +130,18 @@ function RequestCard({ req, busy, onAction }) {
           <TypeBadge type={req.type} />
           {req.matched && (
             <span style={{ fontSize: 11, color: "var(--teal600, #0F6E56)", fontWeight: 500 }}>
-              ✓ Egyeztetett
+              ✓ {L("Egyeztetett", "Matched", "Associée")}
             </span>
           )}
-          {push && <Badge text={push.text} color={push.color} />}
+          {push && <Badge text={pick(...push.text)} color={push.color} />}
         </div>
         <div style={{ fontSize: 11, color: "var(--muted)", display: "flex", gap: 12, flexWrap: "wrap" }}>
-          {req.requestedSeasons ? <span>Évad: {req.requestedSeasons.split(",").join(", ")}</span> : null}
+          {req.requestedSeasons ? <span>{L("Évad", "Season", "Saison")}: {req.requestedSeasons.split(",").join(", ")}</span> : null}
           {req.tmdbId ? <span>TMDB: {req.tmdbId}</span> : null}
           {req.tvdbId ? <span>TVDB: {req.tvdbId}</span> : null}
-          {req.requestedBy && <span>Kérte: {req.requestedBy}</span>}
-          <span>Beérkezett: {fmtTs(req.receivedAtTs)}</span>
-          {req.matched && req.matchedAtTs ? <span>Egyeztetés: {fmtTs(req.matchedAtTs)}</span> : null}
+          {req.requestedBy && <span>{L("Kérte", "Requested by", "Demandé par")}: {req.requestedBy}</span>}
+          <span>{L("Beérkezett", "Received", "Reçue")}: {fmtTs(req.receivedAtTs)}</span>
+          {req.matched && req.matchedAtTs ? <span>{L("Egyeztetés", "Matched", "Association")}: {fmtTs(req.matchedAtTs)}</span> : null}
         </div>
         {req.matched && req.matchedReleaseId && (
           <div
@@ -173,25 +178,25 @@ function RequestCard({ req, busy, onAction }) {
         {req.matched && (
           <button type="button" style={btn} disabled={!!busy}
             onClick={() => onAction("push", req)}
-            title={req.mediaType === "tv" ? "Küldés Sonarr-ba (release push)" : "Küldés Radarr-ba (release push)"}>
-            {isBusy("push") ? "Küldés…" : `➜ ${req.mediaType === "tv" ? "Sonarr" : "Radarr"}`}
+            title={`${L("Küldés:", "Send to", "Envoyer vers")} ${req.mediaType === "tv" ? "Sonarr" : "Radarr"} (release push)`}>
+            {isBusy("push") ? L("Küldés…", "Sending…", "Envoi…") : `➜ ${req.mediaType === "tv" ? "Sonarr" : "Radarr"}`}
           </button>
         )}
         <button type="button" style={btn} disabled={!!busy} onClick={() => onAction("rematch", req)}
-          title={req.matched ? "Egyezés törlése és új keresés" : "Keresés most"}>
-          {isBusy("rematch") ? "Keresés…" : req.matched ? "↻ Újraegyeztetés" : "🔍 Keresés"}
+          title={req.matched ? L("Egyezés törlése és új keresés", "Clear match and search again", "Effacer l'association et rechercher") : L("Keresés most", "Search now", "Rechercher maintenant")}>
+          {isBusy("rematch") ? L("Keresés…", "Searching…", "Recherche…") : req.matched ? `↻ ${L("Újraegyeztetés", "Re-match", "Réassocier")}` : `🔍 ${L("Keresés", "Search", "Rechercher")}`}
         </button>
         {confirmDelete ? (
           <span style={{ display: "flex", gap: 4 }}>
             <button type="button" style={{ ...btn, background: "#A32D2D", color: "#fff", border: "none" }}
               disabled={!!busy} onClick={() => { setConfirmDelete(false); onAction("delete", req); }}>
-              Biztos?
+              {L("Biztos?", "Sure?", "Sûr ?")}
             </button>
-            <button type="button" style={btn} onClick={() => setConfirmDelete(false)}>Mégse</button>
+            <button type="button" style={btn} onClick={() => setConfirmDelete(false)}>{L("Mégse", "Cancel", "Annuler")}</button>
           </span>
         ) : (
           <button type="button" style={btn} disabled={!!busy} onClick={() => setConfirmDelete(true)}>
-            🗑 Törlés
+            🗑 {L("Törlés", "Delete", "Supprimer")}
           </button>
         )}
       </div>
@@ -200,6 +205,7 @@ function RequestCard({ req, busy, onAction }) {
 }
 
 export default function SeerrRequestsPage() {
+  const L = useL();
   const [items, setItems]   = useState([]);
   const [stats, setStats]   = useState(null);
   const [loading, setLoading] = useState(true);
@@ -221,11 +227,11 @@ export default function SeerrRequestsPage() {
       setItems(Array.isArray(data) ? data : []);
       setStats(st);
     } catch (e) {
-      setErr(e?.message || "Betöltési hiba");
+      setErr(e?.message || L("Betöltési hiba", "Load error", "Erreur de chargement"));
     } finally {
       setLoading(false);
     }
-  }, [filter]);
+  }, [filter, L]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -236,10 +242,10 @@ export default function SeerrRequestsPage() {
     try {
       const r = await apiPost("/api/seerr/match");
       const count = Number(r?.matched || 0);
-      setInfo(count > 0 ? `${count} új egyezés.` : "Nincs új egyezés.");
+      setInfo(count > 0 ? L(`${count} új egyezés.`, `${count} new match(es).`, `${count} nouvelle(s) association(s).`) : L("Nincs új egyezés.", "No new match.", "Aucune nouvelle association."));
       if (count > 0) await load();
     } catch (e) {
-      setErr(e?.message || "Egyeztetési hiba");
+      setErr(e?.message || L("Egyeztetési hiba", "Matching error", "Erreur d'association"));
     } finally {
       setMatching(false);
     }
@@ -252,19 +258,19 @@ export default function SeerrRequestsPage() {
     try {
       if (action === "push") {
         const r = await apiPost(`/api/seerr/requests/${req.id}/push`);
-        setInfo(`${req.title}: ${r?.message || (r?.ok ? "elküldve" : "hiba")}`);
+        setInfo(`${req.title}: ${r?.message || (r?.ok ? L("elküldve", "sent", "envoyée") : L("hiba", "error", "erreur"))}`);
       } else if (action === "rematch") {
         const r = await apiPost(`/api/seerr/requests/${req.id}/rematch`);
         setInfo(r?.matched
-          ? `${req.title}: találat – ${r?.match?.title || ""}${r?.match?.pushSummary ? ` (${r.match.pushSummary})` : ""}`
-          : `${req.title}: nincs megfelelő release.`);
+          ? `${req.title}: ${L("találat", "match", "trouvé")} – ${r?.match?.title || ""}${r?.match?.pushSummary ? ` (${r.match.pushSummary})` : ""}`
+          : `${req.title}: ${L("nincs megfelelő release.", "no suitable release.", "aucune release adaptée.")}`);
       } else if (action === "delete") {
         await apiDelete(`/api/seerr/requests/${req.id}`);
-        setInfo(`${req.title} törölve.`);
+        setInfo(`${req.title} ${L("törölve.", "deleted.", "supprimée.")}`);
       }
       await load();
     } catch (e) {
-      setErr(e?.message || "Művelet sikertelen");
+      setErr(e?.message || L("Művelet sikertelen", "Action failed", "Échec de l'action"));
     } finally {
       setBusy("");
     }
@@ -273,11 +279,11 @@ export default function SeerrRequestsPage() {
   const displayed = items; // filtered server-side
 
   return (
-    <div style={{ padding: "1.5rem", maxWidth: 960, margin: "0 auto" }}>
+    <div style={{ padding: "1.5rem", maxWidth: 960, margin: "0 auto" }} {...NO_RUNTIME_TRANSLATE}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: "1rem", flexWrap: "wrap" }}>
         <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>
-          Seerr kérések
+          {L("Seerr kérések", "Seerr requests", "Demandes Seerr")}
         </h1>
         <span style={{ fontSize: 12, color: "var(--muted)" }}>
           Overseerr / Jellyseerr webhook
@@ -290,14 +296,14 @@ export default function SeerrRequestsPage() {
               background: "var(--accent-teal, #0F6E56)", color: "#fff", border: "none",
               cursor: matching ? "not-allowed" : "pointer", opacity: matching ? 0.6 : 1 }}
           >
-            {matching ? "Egyeztetés…" : "🔗 Egyeztetés futtatása"}
+            {matching ? L("Egyeztetés…", "Matching…", "Association…") : `🔗 ${L("Egyeztetés futtatása", "Run matching", "Lancer l'association")}`}
           </button>
           <button
             onClick={load}
             style={{ fontSize: 12, padding: "5px 12px", borderRadius: 6,
               border: "1px solid var(--border)", background: "var(--bg2)", cursor: "pointer" }}
           >
-            ↻ Frissítés
+            ↻ {L("Frissítés", "Refresh", "Actualiser")}
           </button>
           <button
             onClick={() => setShowSettings((v) => !v)}
@@ -305,7 +311,7 @@ export default function SeerrRequestsPage() {
               border: "1px solid " + (showSettings ? "var(--accent-blue, #185FA5)" : "var(--border)"),
               background: showSettings ? "var(--accent-blue-subtle, #E6F1FB)" : "var(--bg2)" }}
           >
-            ⚙️ Beállítások
+            ⚙️ {L("Beállítások", "Settings", "Paramètres")}
           </button>
         </div>
       </div>
@@ -313,11 +319,11 @@ export default function SeerrRequestsPage() {
       {/* Stats */}
       {stats && (
         <div style={{ display: "flex", gap: 8, marginBottom: "1rem", flexWrap: "wrap" }}>
-          <StatTile label="Összes kérés" value={stats.total} />
-          <StatTile label="Várakozik" value={stats.pending} color="#8A6D1F" />
-          <StatTile label="Egyeztetett" value={stats.matched} color="#0F6E56" />
-          <StatTile label="Arr-ba küldve" value={stats.pushed} color="#534AB7" />
-          <StatTile label="Elutasított" value={stats.declined} color="#A32D2D" />
+          <StatTile label={L("Összes kérés", "All requests", "Toutes les demandes")} value={stats.total} />
+          <StatTile label={L("Várakozik", "Waiting", "En attente")} value={stats.pending} color="#8A6D1F" />
+          <StatTile label={L("Egyeztetett", "Matched", "Associées")} value={stats.matched} color="#0F6E56" />
+          <StatTile label={L("Arr-ba küldve", "Sent to Arr", "Envoyées vers Arr")} value={stats.pushed} color="#534AB7" />
+          <StatTile label={L("Elutasított", "Declined", "Refusées")} value={stats.declined} color="#A32D2D" />
         </div>
       )}
 
@@ -330,9 +336,9 @@ export default function SeerrRequestsPage() {
         fontSize: 13, color: "var(--text2)"
       }}>
         <strong style={{ color: "var(--text)", display: "block", marginBottom: 6 }}>
-          🔌 Webhook beállítás Seerr-ben
+          🔌 {L("Webhook beállítás Seerr-ben", "Webhook setup in Seerr", "Configuration du webhook dans Seerr")}
         </strong>
-        Seerr → Beállítások → Értesítések → Webhook<br />
+        {L("Seerr → Beállítások → Értesítések → Webhook", "Seerr → Settings → Notifications → Webhook", "Seerr → Paramètres → Notifications → Webhook")}<br />
         <code style={{
           display: "inline-block", marginTop: 6, padding: "3px 8px",
           background: "var(--bg3)", borderRadius: 4, fontSize: 12, userSelect: "all"
@@ -343,16 +349,14 @@ export default function SeerrRequestsPage() {
           JSON Payload Type: Default · Events: Requested, Auto-Approved, Approved, Available, Declined
         </span>
         <div style={{ marginTop: 6, fontSize: 12, color: "var(--muted)" }}>
-          Ha a Feedarr hitelesítést használ, add meg a Seerr webhook „Authorization Header” mezőjében
-          (pl. <code>Basic &lt;base64(felhasználó:jelszó)&gt;</code>). A kért évadokat és a posztert a
-          webhook alapértelmezett sablonjából olvassa ki. Tipp: a Beállítások → Alkalmazás-központ →
-          „Összekötés indítása” ezt a webhookot automatikusan beállítja a Seerr-ben.
+          {L("Ha a Poisonarr hitelesítést használ, add meg a Seerr webhook „Authorization Header” mezőjében (pl.", "If Poisonarr uses authentication, set it in the Seerr webhook “Authorization Header” field (e.g.", "Si Poisonarr utilise une authentification, renseignez-la dans le champ « Authorization Header » du webhook Seerr (ex.")}{" "}
+          <code>Basic &lt;base64({L("felhasználó:jelszó", "user:password", "utilisateur:mot_de_passe")})&gt;</code>). {L("A kért évadokat és a posztert a webhook alapértelmezett sablonjából olvassa ki. Tipp: a Beállítások → Alkalmazás-központ → „Összekötés indítása” ezt a webhookot automatikusan beállítja a Seerr-ben.", "Requested seasons and the poster are read from the webhook's default template. Tip: Settings → App hub → “Start connecting” sets this webhook up in Seerr automatically.", "Les saisons demandées et l'affiche sont lues depuis le modèle par défaut du webhook. Astuce : Paramètres → Centre d'applications → « Lancer la connexion » configure ce webhook automatiquement dans Seerr.")}
         </div>
       </div>
 
       {/* Filter tabs */}
       <div style={{ display: "flex", gap: 8, marginBottom: "1rem", flexWrap: "wrap" }}>
-        {[["all","Összes"], ["unmatched","Nem egyeztetett"], ["matched","Egyeztetett"]].map(([v, l]) => (
+        {[["all", L("Összes", "All", "Toutes")], ["unmatched", L("Nem egyeztetett", "Unmatched", "Non associées")], ["matched", L("Egyeztetett", "Matched", "Associées")]].map(([v, l]) => (
           <button key={v} onClick={() => setFilter(v)} style={{
             fontSize: 13, padding: "4px 12px", borderRadius: 16,
             border: "1px solid " + (filter === v ? "var(--accent-blue, #185FA5)" : "var(--border)"),
@@ -364,7 +368,7 @@ export default function SeerrRequestsPage() {
           </button>
         ))}
         <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)", alignSelf: "center" }}>
-          {displayed.length} kérés
+          {displayed.length} {L("kérés", "requests", "demandes")}
         </span>
       </div>
 
@@ -386,7 +390,7 @@ export default function SeerrRequestsPage() {
 
       {loading && (
         <div style={{ textAlign: "center", padding: "3rem", color: "var(--muted)" }}>
-          Betöltés…
+          {L("Betöltés…", "Loading…", "Chargement…")}
         </div>
       )}
 
@@ -398,14 +402,14 @@ export default function SeerrRequestsPage() {
           <div style={{ fontSize: 32, marginBottom: 8 }}>📭</div>
           <div style={{ fontSize: 14 }}>
             {filter === "unmatched"
-              ? "Minden kérés egyeztetett."
+              ? L("Minden kérés egyeztetett.", "Every request is matched.", "Toutes les demandes sont associées.")
               : filter === "matched"
-                ? "Még nincs egyeztetett kérés."
-                : "Még nem érkezett Seerr webhook."}
+                ? L("Még nincs egyeztetett kérés.", "No matched request yet.", "Aucune demande associée pour l'instant.")
+                : L("Még nem érkezett Seerr webhook.", "No Seerr webhook received yet.", "Aucun webhook Seerr reçu pour l'instant.")}
           </div>
           {filter === "all" && (
             <div style={{ fontSize: 12, marginTop: 6, color: "var(--muted)" }}>
-              Állítsd be a fenti webhook URL-t a Seerr-ben.
+              {L("Állítsd be a fenti webhook URL-t a Seerr-ben.", "Set the webhook URL above in Seerr.", "Configurez l'URL du webhook ci-dessus dans Seerr.")}
             </div>
           )}
         </div>

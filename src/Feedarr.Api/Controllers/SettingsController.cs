@@ -756,7 +756,7 @@ public sealed class SettingsController : ControllerBase
         if (!string.IsNullOrWhiteSpace(filterCategory) &&
             !CategoryGroupCatalog.TryNormalizeKey(filterCategory, out _))
         {
-            errors["defaultFilterCategoryId"] = ["La catégorie par défaut doit correspondre à une catégorie Feedarr connue."];
+            errors["defaultFilterCategoryId"] = ["La catégorie par défaut doit correspondre à une catégorie Poisonarr connue."];
         }
 
         var filterQuality = (dto.DefaultFilterQuality ?? "").Trim();

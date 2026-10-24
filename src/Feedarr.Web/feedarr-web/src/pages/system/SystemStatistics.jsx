@@ -446,7 +446,7 @@ function MetricCard({ title, value, color }) {
   );
 }
 
-/* ─────────────────────── PANEL: Feedarr ─────────────────────── */
+/* ─────────────────────── PANEL: Poisonarr ─────────────────────── */
 
 function FeedarrPanel({ refreshKey }) {
   const [data, setData] = useState(null);
@@ -1094,7 +1094,7 @@ export default function SystemStatistics({ refreshKey = 0 }) {
       {/* Tab buttons */}
       <div className="card-row card-row-fourth" style={{ marginBottom: 0 }}>
         <StatTab
-          id="feedarr" label="Feedarr" active={activeTab} onClick={setActiveTab}
+          id="feedarr" label="Poisonarr" active={activeTab} onClick={setActiveTab}
           value={summary?.version ?? '...'}
           sub={summary ? fmtUptime(summary.uptimeSeconds) : null}
         />

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  Feedarr Stack – Proxmox VE LXC creator
+#  Poisonarr – Proxmox VE LXC creator
 #
 #  Run in the Proxmox VE HOST shell (as root):
 #
 #    bash -c "$(curl -fsSL https://raw.githubusercontent.com/NagyRichard09/Poison/main/proxmox/feedarr-stack-lxc.sh)"
 #
 #  Creates an unprivileged Debian 13 LXC and installs natively (no Docker):
-#    Feedarr · Seerr · Prowlarr · Sonarr · Radarr · Tautulli · qBittorrent
+#    Plex · Poisonarr · Seerr · Prowlarr · Sonarr · Radarr · Tautulli · qBittorrent
 #
 #  Non-interactive: set the variables below as environment variables and
 #  add YES=1, e.g.  CTID=210 MEMORY=6144 MEDIA_HOST_PATH=/tank/media YES=1 bash feedarr-stack-lxc.sh
@@ -18,11 +18,11 @@ FEEDARR_REPO="${FEEDARR_REPO:-NagyRichard09/Poison}"
 FEEDARR_BRANCH="${FEEDARR_BRANCH:-main}"
 
 CTID="${CTID:-}"
-CT_HOSTNAME="${CT_HOSTNAME:-feedarr-stack}"
+CT_HOSTNAME="${CT_HOSTNAME:-poisonarr}"
 CORES="${CORES:-4}"
-MEMORY="${MEMORY:-4096}"          # MB – the Seerr build needs ~3 GB
+MEMORY="${MEMORY:-6144}"          # MB – Seerr build ~3 GB, Plex transcoding
 SWAP="${SWAP:-2048}"              # MB
-DISK_GB="${DISK_GB:-32}"
+DISK_GB="${DISK_GB:-40}"          # Plex metadata grows with the library
 ROOTFS_STORAGE="${ROOTFS_STORAGE:-}"
 TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-local}"
 BRIDGE="${BRIDGE:-vmbr0}"
@@ -60,8 +60,8 @@ command -v pveversion >/dev/null && command -v pct >/dev/null \
   || die "Ezt a scriptet a Proxmox VE host shelljében kell futtatni (pct / pveversion nem található)."
 ok "Proxmox: $(pveversion | head -n1)"
 
-printf '\n%s Feedarr Stack – natív LXC telepítő %s\n' "$C_B" "$C_OFF"
-printf '  Feedarr · Seerr · Prowlarr · Sonarr · Radarr · Tautulli · qBittorrent\n'
+printf '\n%s Poisonarr – natív LXC telepítő %s\n' "$C_B" "$C_OFF"
+printf '  Plex · Poisonarr · Seerr · Prowlarr · Sonarr · Radarr · Tautulli · qBittorrent\n'
 printf '  Forrás: https://github.com/%s (%s)\n\n' "$FEEDARR_REPO" "$FEEDARR_BRANCH"
 
 # ----------------------------------------------------------------------------- settings
@@ -147,8 +147,8 @@ pct create "$CTID" "${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE}" \
   --features nesting=1 \
   --onboot 1 \
   --ostype debian \
-  --tags "feedarr;media" \
-  --description "Feedarr Stack: Feedarr, Seerr, Prowlarr, Sonarr, Radarr, Tautulli, qBittorrent (https://github.com/${FEEDARR_REPO})" \
+  --tags "poisonarr;media" \
+  --description "Poisonarr: Plex, Seerr, Prowlarr, Sonarr, Radarr, Tautulli, qBittorrent (https://github.com/${FEEDARR_REPO})" \
   --password "$CT_PASSWORD" >/dev/null
 ok "CT $CTID létrehozva"
 
@@ -204,8 +204,9 @@ pct exec "$CTID" -- env LANG=C.UTF-8 LC_ALL=C.UTF-8 FEEDARR_REPO="$FEEDARR_REPO"
 
 CT_IP="$(pct exec "$CTID" -- hostname -I 2>/dev/null | awk '{print $1}')"
 printf '\n%s════════════════════════════════════════════════════════════════%s\n' "$C_OK" "$C_OFF"
-printf ' %sKész!%s  Feedarr: %shttp://%s:8888%s\n' "$C_B" "$C_OFF" "$C_B" "$CT_IP" "$C_OFF"
+printf ' %sKész!%s  Poisonarr: %shttp://%s:8888%s  ← ezt nyisd meg, a varázsló a Plexszel kezd\n' "$C_B" "$C_OFF" "$C_B" "$CT_IP" "$C_OFF"
+printf '  Plex:      http://%s:32400/web\n' "$CT_IP"
 printf '  Konténer: CT %s (%s), root jelszó: %s\n' "$CTID" "$CT_HOSTNAME" "$CT_PASSWORD"
-printf '  Jelszavak a konténerben: pct exec %s -- feedarr-stack credentials\n' "$CTID"
-printf '  Frissítés:               pct exec %s -- feedarr-stack update\n' "$CTID"
+printf '  Jelszavak a konténerben: pct exec %s -- poisonarr credentials\n' "$CTID"
+printf '  Frissítés:               pct exec %s -- poisonarr update\n' "$CTID"
 printf '%s════════════════════════════════════════════════════════════════%s\n' "$C_OK" "$C_OFF"

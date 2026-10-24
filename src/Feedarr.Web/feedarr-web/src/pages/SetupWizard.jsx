@@ -72,6 +72,21 @@ export default function SetupWizard() {
   const [jackettResetToken, setJackettResetToken] = useState(0);
   const securitySaveRef = useRef(null);
 
+  // Poisonarr (Proxmox LXC): configure Radarr → … → Tautulli first.
+  useEffect(() => {
+    let skipped = false;
+    try { skipped = !!window.sessionStorage.getItem("feedarr:stackSetup:skip"); } catch { /* ignore */ }
+    if (skipped || step > 3) return undefined;
+    let active = true;
+    apiGet("/api/stack-setup/status", { timeoutMs: 15000 })
+      .then((status) => {
+        if (active && status?.stackMode && !status?.completed) navigate("/stack-setup", { replace: true });
+      })
+      .catch(() => { /* not a stack install */ });
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     setMaxStep((prev) => Math.max(prev, step));
     if (typeof window !== "undefined") {

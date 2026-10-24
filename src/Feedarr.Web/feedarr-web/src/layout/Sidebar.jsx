@@ -140,7 +140,7 @@ export default function Sidebar({ onNavigate }) {
         <Item
           to="/seerr"
           icon="movie_filter"
-          label="Seerr kérések"
+          label="Demandes Seerr"
           onNavigate={onNavigate}
         />
 
@@ -218,14 +218,14 @@ export default function Sidebar({ onNavigate }) {
               className={() => "snav__subitem" + (path === "/settings/hub" ? " is-active" : "")}
               onClick={onNavigate}
             >
-              Alkalmazás-központ
+              Centre d'applications
             </NavLink>
             <NavLink
               to="/settings/storage"
               className={() => "snav__subitem" + (path === "/settings/storage" ? " is-active" : "")}
               onClick={onNavigate}
             >
-              Tárhely
+              Stockage
             </NavLink>
           </div>
         )}

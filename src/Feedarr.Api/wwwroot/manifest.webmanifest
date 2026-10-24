@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "Feedarr",
-  "short_name": "Feedarr",
-  "description": "Feedarr web application",
+  "name": "Poisonarr",
+  "short_name": "Poisonarr",
+  "description": "Poisonarr web application",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

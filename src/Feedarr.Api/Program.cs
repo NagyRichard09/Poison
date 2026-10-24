@@ -73,7 +73,7 @@ MigrateLegacyDataProtectionKeys(Path.Combine(AppContext.BaseDirectory, "Data", "
 
 var dataProtectionBuilder = builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(keysPath))
-    .SetApplicationName("Feedarr");
+    .SetApplicationName("Feedarr"); // keep: renaming would invalidate the data protection key ring
 
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
@@ -244,7 +244,7 @@ builder.Services.AddSingleton<Feedarr.Api.Controllers.SystemApiCore>();
 builder.Services.AddHttpClient("github-updates", c =>
 {
     c.Timeout = TimeSpan.FromSeconds(30);
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 });
 
 // Outbound notifications (Discord / ntfy / generic webhook). ntfy and webhook
@@ -253,7 +253,7 @@ builder.Services.AddHttpClient("github-updates", c =>
 builder.Services.AddHttpClient(Feedarr.Api.Services.AppHub.AppHubService.HttpClientName, c =>
 {
     c.Timeout = TimeSpan.FromSeconds(15);
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
 {
     AllowAutoRedirect = false,
@@ -262,11 +262,12 @@ builder.Services.AddHttpClient(Feedarr.Api.Services.AppHub.AppHubService.HttpCli
         : null
 });
 builder.Services.AddSingleton<Feedarr.Api.Services.AppHub.AppHubService>();
+builder.Services.AddSingleton<Feedarr.Api.Services.AppHub.StackSetupService>();
 
 builder.Services.AddHttpClient(Feedarr.Api.Services.Notifications.NotificationService.HttpClientName, c =>
 {
     c.Timeout = TimeSpan.FromSeconds(15);
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
 {
     AllowAutoRedirect = false,
@@ -278,7 +279,7 @@ builder.Services.AddHttpClient(Feedarr.Api.Services.Notifications.NotificationSe
 builder.Services.AddHttpClient("torrent-download", c =>
 {
     c.Timeout = TimeSpan.FromSeconds(60);
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
 {
     AllowAutoRedirect = false,
@@ -308,7 +309,7 @@ builder.Services.AddSingleton<TorznabRssParser>();
 builder.Services.AddHttpClient<TorznabClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(45);
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
 {
     // AllowAutoRedirect=false: redirects are followed manually by ProtocolDowngradeRedirectHandler
@@ -326,7 +327,7 @@ builder.Services.AddHttpClient<TmdbClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(30);
     c.BaseAddress = new Uri("https://api.themoviedb.org/3/");
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 }).AddHttpMessageHandler<ProviderCircuitBreakerHandler>()
   .AddHttpMessageHandler<TransientHttpRetryHandler>();
 
@@ -335,7 +336,7 @@ builder.Services.AddHttpClient<FanartClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(25);
     c.BaseAddress = new Uri("https://webservice.fanart.tv/v3/");
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 }).AddHttpMessageHandler<ProviderCircuitBreakerHandler>()
   .AddHttpMessageHandler<TransientHttpRetryHandler>();
 
@@ -343,7 +344,7 @@ builder.Services.AddHttpClient<FanartClient>(c =>
 builder.Services.AddHttpClient<IgdbClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(25);
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 }).AddHttpMessageHandler<ProviderCircuitBreakerHandler>()
   .AddHttpMessageHandler<TransientHttpRetryHandler>();
 
@@ -352,7 +353,7 @@ builder.Services.AddHttpClient<TvMazeClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(20);
     c.BaseAddress = new Uri("https://api.tvmaze.com/");
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 }).AddHttpMessageHandler<ProviderCircuitBreakerHandler>()
   .AddHttpMessageHandler<TransientHttpRetryHandler>();
 
@@ -361,7 +362,7 @@ builder.Services.AddHttpClient<JikanClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(20);
     c.BaseAddress = new Uri("https://api.jikan.moe/v4/");
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 }).AddHttpMessageHandler<ProviderCircuitBreakerHandler>()
   .AddHttpMessageHandler<TransientHttpRetryHandler>();
 
@@ -370,7 +371,7 @@ builder.Services.AddHttpClient<GoogleBooksClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(20);
     c.BaseAddress = new Uri("https://www.googleapis.com/books/v1/");
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 }).AddHttpMessageHandler<ProviderCircuitBreakerHandler>()
   .AddHttpMessageHandler<TransientHttpRetryHandler>();
 
@@ -379,7 +380,7 @@ builder.Services.AddHttpClient<TheAudioDbClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(20);
     c.BaseAddress = new Uri("https://www.theaudiodb.com/api/v1/json/");
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 }).AddHttpMessageHandler<ProviderCircuitBreakerHandler>()
   .AddHttpMessageHandler<TransientHttpRetryHandler>();
 
@@ -388,7 +389,7 @@ builder.Services.AddHttpClient<ComicVineClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(20);
     c.BaseAddress = new Uri("https://comicvine.gamespot.com/api/");
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 }).AddHttpMessageHandler<ProviderCircuitBreakerHandler>()
   .AddHttpMessageHandler<TransientHttpRetryHandler>();
 
@@ -397,7 +398,7 @@ builder.Services.AddHttpClient<OpenLibraryClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(20);
     c.BaseAddress = new Uri("https://openlibrary.org/");
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0 ( https://github.com/Guizmos/feedarr )");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0 ( https://github.com/Guizmos/feedarr )");
     c.DefaultRequestHeaders.Accept.ParseAdd("application/json");
 }).AddHttpMessageHandler<ProviderCircuitBreakerHandler>()
   .AddHttpMessageHandler<TransientHttpRetryHandler>();
@@ -406,7 +407,7 @@ builder.Services.AddHttpClient<OpenLibraryClient>(c =>
 builder.Services.AddHttpClient<MusicBrainzClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(25);
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0 ( https://github.com/Guizmos/feedarr )");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0 ( https://github.com/Guizmos/feedarr )");
     c.DefaultRequestHeaders.Accept.ParseAdd("application/json");
 }).AddHttpMessageHandler<ProviderCircuitBreakerHandler>()
   .AddHttpMessageHandler<TransientHttpRetryHandler>();
@@ -416,7 +417,7 @@ builder.Services.AddHttpClient<RawgClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(20);
     c.BaseAddress = new Uri("https://api.rawg.io/api/");
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 }).AddHttpMessageHandler<ProviderCircuitBreakerHandler>()
   .AddHttpMessageHandler<TransientHttpRetryHandler>();
 
@@ -424,7 +425,7 @@ builder.Services.AddHttpClient<RawgClient>(c =>
 builder.Services.AddHttpClient<OmdbClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(15);
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 }).AddHttpMessageHandler<ProviderCircuitBreakerHandler>()
   .AddHttpMessageHandler<TransientHttpRetryHandler>();
 
@@ -432,7 +433,7 @@ builder.Services.AddHttpClient<OmdbClient>(c =>
 builder.Services.AddHttpClient<TvdbClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(20);
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 }).AddHttpMessageHandler<ProviderCircuitBreakerHandler>()
   .AddHttpMessageHandler<TransientHttpRetryHandler>();
 
@@ -441,7 +442,7 @@ builder.Services.AddHttpClient<TvdbClient>(c =>
 builder.Services.AddHttpClient<SonarrClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(30);
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
 {
     AllowAutoRedirect = false,
@@ -457,7 +458,7 @@ builder.Services.AddHttpClient<SonarrClient>(c =>
 builder.Services.AddHttpClient<RadarrClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(30);
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
 {
     AllowAutoRedirect = false,
@@ -473,7 +474,7 @@ builder.Services.AddHttpClient<RadarrClient>(c =>
 builder.Services.AddHttpClient<EerrRequestClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(30);
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
 {
     AllowAutoRedirect = false,
@@ -490,7 +491,7 @@ builder.Services.AddHttpClient<EerrRequestClient>(c =>
 builder.Services.AddHttpClient<JackettClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(30);
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
 {
     AllowAutoRedirect = false,
@@ -506,7 +507,7 @@ builder.Services.AddHttpClient<JackettClient>(c =>
 builder.Services.AddHttpClient<ProwlarrClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(30);
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Feedarr/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0");
 }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
 {
     AllowAutoRedirect = false,
@@ -545,9 +546,9 @@ builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
     {
-        Title = "Feedarr API",
+        Title = "Poisonarr API",
         Version = "v1",
-        Description = "Internal REST API for the Feedarr release dashboard."
+        Description = "Internal REST API for the Poisonarr release dashboard."
     });
     // Include XML comments if available (generated by <GenerateDocumentationFile>true</GenerateDocumentationFile>)
     var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
@@ -694,9 +695,9 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI(c =>
     {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Feedarr API v1");
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Poisonarr API v1");
         c.RoutePrefix = "swagger";
-        c.DocumentTitle = "Feedarr API";
+        c.DocumentTitle = "Poisonarr API";
     });
 }
 
@@ -748,7 +749,7 @@ app.UseExceptionHandler(errApp =>
                 reason = isCryptoInfra ? "crypto_subsystem_unavailable" : "invalid_stored_secret",
                 message = isCryptoInfra
                     ? "The encryption subsystem is unavailable. " +
-                      "Ensure the data/keys directory is mounted and readable, then restart Feedarr."
+                      "Ensure the data/keys directory is mounted and readable, then restart Poisonarr."
                     : "One or more API keys could not be decrypted. " +
                       "The DataProtection key ring may have changed (new machine, Docker volume reset, " +
                       "or backup restored from a different host). " +

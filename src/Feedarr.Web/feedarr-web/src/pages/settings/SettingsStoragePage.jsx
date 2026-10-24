@@ -5,6 +5,7 @@ import SubAction from "../../ui/SubAction.jsx";
 import Loader from "../../ui/Loader.jsx";
 import ToggleSwitch from "../../ui/ToggleSwitch.jsx";
 import DiskSpaceBars from "../../ui/disk/DiskSpaceBars.jsx";
+import { NO_RUNTIME_TRANSLATE, useL } from "../../app/i18n.js";
 
 const MAX_PATHS = 10;
 
@@ -45,6 +46,7 @@ function NumberRow({ title, help, value, min, max, suffix, onChange }) {
 }
 
 export default function SettingsStoragePage() {
+  const L = useL();
   const setContent = useSubbarSetter();
   const [settings, setSettings] = useState(null);
   const [disk, setDisk] = useState(null);
@@ -64,7 +66,7 @@ export default function SettingsStoragePage() {
       setDisk(d || null);
       setDirty(false);
     } catch (e) {
-      setErr(e?.message || "Betöltési hiba");
+      setErr(e?.message || "load error");
     } finally {
       setLoading(false);
     }
@@ -96,7 +98,7 @@ export default function SettingsStoragePage() {
       setSaveState("success");
       setTimeout(() => setSaveState("idle"), 1800);
     } catch (e) {
-      setErr(e?.message || "Mentési hiba");
+      setErr(e?.message || "save error");
       setSaveState("error");
     }
   }, [settings]);
@@ -109,12 +111,12 @@ export default function SettingsStoragePage() {
 
   useEffect(() => {
     setContent(
-      <div className="settings-subbar-content">
-        <SubAction icon="refresh" label="Frissítés" onClick={() => loadRef.current?.(true)} />
+      <div className="settings-subbar-content" {...NO_RUNTIME_TRANSLATE}>
+        <SubAction icon="refresh" label={L("Frissítés", "Refresh", "Actualiser")} onClick={() => loadRef.current?.(true)} />
         <SubAction
           icon={saveState === "loading" ? "progress_activity" : saveState === "success" ? "check_circle"
             : saveState === "error" ? "cancel" : "save"}
-          label="Mentés"
+          label={L("Mentés", "Save", "Enregistrer")}
           onClick={() => saveRef.current?.()}
           disabled={saveState === "loading" || !dirty}
           className={saveState === "loading" ? "is-loading" : saveState === "success" ? "is-success"
@@ -123,7 +125,7 @@ export default function SettingsStoragePage() {
       </div>
     );
     return () => setContent(null);
-  }, [setContent, saveState, dirty]);
+  }, [setContent, saveState, dirty, L]);
 
   const paths = settings?.extraPaths || [];
   const setPath = (i, value) => update({ extraPaths: paths.map((p, idx) => (idx === i ? value : p)) });
@@ -131,20 +133,20 @@ export default function SettingsStoragePage() {
   const addPath = () => update({ extraPaths: [...paths, ""] });
 
   return (
-    <div className="page page--settings">
+    <div className="page page--settings" {...NO_RUNTIME_TRANSLATE}>
       <div className="pagehead">
         <div>
-          <h1>Tárhely</h1>
-          <div className="muted">Szabad hely a meghajtókon, figyelmeztetés és főképernyő widget</div>
+          <h1>{L("Tárhely", "Storage", "Stockage")}</h1>
+          <div className="muted">{L("Szabad hely a meghajtókon, figyelmeztetés és főképernyő widget", "Free space on your drives, warnings and main screen widget", "Espace libre des disques, alertes et widget de l'écran principal")}</div>
         </div>
       </div>
       <div className="pagehead__divider" />
 
-      {loading && <Loader label="Betöltés…" />}
+      {loading && <Loader label={L("Betöltés…", "Loading…", "Chargement…")} />}
 
       {!loading && err && (
         <div className="errorbox">
-          <div className="errorbox__title">Hiba</div>
+          <div className="errorbox__title">{L("Hiba", "Error", "Erreur")}</div>
           <div className="muted">{err}</div>
         </div>
       )}
@@ -153,35 +155,35 @@ export default function SettingsStoragePage() {
         <div className="settings-grid">
           <div className="settings-card settings-card--full" id="disk-volumes">
             <div className="settings-card__title">
-              Meghajtók
-              {disk?.anyLow && <span style={{ color: "#ef4444", marginLeft: 8, fontSize: 13 }}>⚠️ kevés a szabad hely</span>}
+              {L("Meghajtók", "Drives", "Disques")}
+              {disk?.anyLow && <span style={{ color: "#ef4444", marginLeft: 8, fontSize: 13 }}>⚠️ {L("kevés a szabad hely", "low free space", "espace libre faible")}</span>}
             </div>
             <DiskSpaceBars volumes={disk?.volumes} />
             {(disk?.missingPaths || []).length > 0 && (
               <div className="settings-help" style={{ color: "#ef4444", marginTop: 10 }}>
-                Nem található / nem elérhető: {disk.missingPaths.join(", ")}
-                {" "}— Docker esetén a mappát volume-ként csatolni kell a konténerbe.
+                {L("Nem található / nem elérhető", "Not found / unavailable", "Introuvable / indisponible")}: {disk.missingPaths.join(", ")}
+                {" "}— {L("Docker esetén a mappát volume-ként csatolni kell a konténerbe.", "With Docker the folder must be mounted into the container as a volume.", "Avec Docker, le dossier doit être monté comme volume dans le conteneur.")}
               </div>
             )}
             {disk?.checkedAtTs ? (
               <div className="settings-help" style={{ marginTop: 8 }}>
-                Utolsó ellenőrzés: {new Date(disk.checkedAtTs * 1000).toLocaleString("hu-HU")}
+                {L("Utolsó ellenőrzés", "Last check", "Dernière vérification")}: {new Date(disk.checkedAtTs * 1000).toLocaleString(L("hu-HU", "en-US", "fr-FR"))}
               </div>
             ) : null}
           </div>
 
           <div className="settings-card" id="disk-display">
-            <div className="settings-card__title">Megjelenítés</div>
+            <div className="settings-card__title">{L("Megjelenítés", "Display", "Affichage")}</div>
             <div className="indexer-list">
               <ToggleRow
-                title="Megjelenítés a főképernyőn"
-                help="A Könyvtár oldal tetején egy kis sáv mutatja a szabad helyet. A sáv × gombjával is elrejthető."
+                title={L("Megjelenítés a főképernyőn", "Show on the main screen", "Afficher sur l'écran principal")}
+                help={L("A Könyvtár oldal tetején egy kis sáv mutatja a szabad helyet. A sáv × gombjával is elrejthető.", "A small bar at the top of the Library page shows the free space. Its × button hides it too.", "Une petite barre en haut de la Bibliothèque affiche l'espace libre. Son bouton × la masque aussi.")}
                 checked={settings.showOnMainScreen}
                 onChange={(v) => update({ showOnMainScreen: v })}
               />
               <ToggleRow
-                title="Szokásos csatolási pontok"
-                help="A /, /data, /downloads, /media, /tv, /movies stb. mappák automatikus figyelése, ha léteznek."
+                title={L("Szokásos csatolási pontok", "Common mount points", "Points de montage habituels")}
+                help={L("A /, /data, /downloads, /media, /tv, /movies stb. mappák automatikus figyelése, ha léteznek.", "Automatically watch /, /data, /downloads, /media, /tv, /movies etc. when they exist.", "Surveille automatiquement /, /data, /downloads, /media, /tv, /movies, etc. s'ils existent.")}
                 checked={settings.includeDefaultPaths}
                 onChange={(v) => update({ includeDefaultPaths: v })}
               />
@@ -189,11 +191,11 @@ export default function SettingsStoragePage() {
           </div>
 
           <div className="settings-card" id="disk-warning">
-            <div className="settings-card__title">Figyelmeztetés</div>
+            <div className="settings-card__title">{L("Figyelmeztetés", "Warning", "Alerte")}</div>
             <div className="indexer-list">
               <NumberRow
-                title="Kevés hely, ha a szabad terület kevesebb mint"
-                help="0 = kikapcsolva."
+                title={L("Kevés hely, ha a szabad terület kevesebb mint", "Low space when free space is below", "Espace faible si l'espace libre est inférieur à")}
+                help={L("0 = kikapcsolva.", "0 = off.", "0 = désactivé.")}
                 value={settings.warnFreePercent ?? 10}
                 min={0}
                 max={90}
@@ -201,8 +203,8 @@ export default function SettingsStoragePage() {
                 onChange={(v) => update({ warnFreePercent: v })}
               />
               <NumberRow
-                title="…vagy kevesebb mint"
-                help="Abszolút határ GB-ban, nagy lemezekhez hasznos. 0 = kikapcsolva."
+                title={L("…vagy kevesebb mint", "…or below", "…ou inférieur à")}
+                help={L("Abszolút határ GB-ban, nagy lemezekhez hasznos. 0 = kikapcsolva.", "Absolute limit in GB, useful for large disks. 0 = off.", "Seuil absolu en Go, utile pour les gros disques. 0 = désactivé.")}
                 value={settings.warnFreeGb ?? 0}
                 min={0}
                 max={100000}
@@ -210,8 +212,8 @@ export default function SettingsStoragePage() {
                 onChange={(v) => update({ warnFreeGb: v })}
               />
               <ToggleRow
-                title="Értesítés küldése"
-                help="Discord / ntfy / webhook üzenet, amikor egy meghajtó a határ alá kerül (15 percenként ellenőrizve). A csatornák a Seerr oldal Beállítások paneljén adhatók meg."
+                title={L("Értesítés küldése", "Send a notification", "Envoyer une notification")}
+                help={L("Discord / ntfy / webhook üzenet, amikor egy meghajtó a határ alá kerül (15 percenként ellenőrizve). A csatornák a Seerr oldal Beállítások paneljén adhatók meg.", "Discord / ntfy / webhook message when a drive drops below the limit (checked every 15 minutes). Channels are set in the Settings panel of the Seerr page.", "Message Discord / ntfy / webhook quand un disque passe sous le seuil (vérifié toutes les 15 minutes). Les canaux se règlent dans le panneau Paramètres de la page Seerr.")}
                 checked={settings.notifyOnLow}
                 onChange={(v) => update({ notifyOnLow: v })}
               />
@@ -219,10 +221,10 @@ export default function SettingsStoragePage() {
           </div>
 
           <div className="settings-card settings-card--full" id="disk-paths">
-            <div className="settings-card__title">Figyelt mappák</div>
+            <div className="settings-card__title">{L("Figyelt mappák", "Watched folders", "Dossiers surveillés")}</div>
             <div className="settings-help" style={{ marginBottom: 8 }}>
-              Pl. a letöltési vagy média mappa (Dockerben a konténeren belüli útvonal, pl. <code>/downloads</code>).
-              Az azonos lemezen lévő mappák egy sorban jelennek meg. A Feedarr adatmappája mindig figyelve van.
+              {L("Pl. a letöltési vagy média mappa (Dockerben a konténeren belüli útvonal, pl.", "E.g. the download or media folder (with Docker the path inside the container, e.g.", "Par ex. le dossier de téléchargement ou de médias (avec Docker, le chemin dans le conteneur, ex.")} <code>/downloads</code>).
+              {" "}{L("Az azonos lemezen lévő mappák egy sorban jelennek meg. A Poisonarr adatmappája mindig figyelve van.", "Folders on the same disk are shown in one row. Poisonarr's data folder is always watched.", "Les dossiers d'un même disque apparaissent sur une ligne. Le dossier de données de Poisonarr est toujours surveillé.")}
             </div>
             <div className="diskspace-paths">
               {paths.map((p, i) => (
@@ -232,16 +234,16 @@ export default function SettingsStoragePage() {
                     value={p}
                     placeholder="/downloads"
                     onChange={(e) => setPath(i, e.target.value)}
-                    aria-label={`Figyelt mappa ${i + 1}`}
+                    aria-label={`${L("Figyelt mappa", "Watched folder", "Dossier surveillé")} ${i + 1}`}
                   />
-                  <button type="button" className="btn" onClick={() => removePath(i)} title="Eltávolítás">
-                    Törlés
+                  <button type="button" className="btn" onClick={() => removePath(i)} title={L("Eltávolítás", "Remove", "Retirer")}>
+                    {L("Törlés", "Delete", "Supprimer")}
                   </button>
                 </div>
               ))}
               {paths.length < MAX_PATHS && (
                 <div>
-                  <button type="button" className="btn" onClick={addPath}>+ Mappa hozzáadása</button>
+                  <button type="button" className="btn" onClick={addPath}>+ {L("Mappa hozzáadása", "Add folder", "Ajouter un dossier")}</button>
                 </div>
               )}
             </div>

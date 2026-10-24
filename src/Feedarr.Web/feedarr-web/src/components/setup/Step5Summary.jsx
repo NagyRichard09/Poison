@@ -213,7 +213,7 @@ export default function Step5Summary({ onFinish, finishing }) {
       <div className="setup-summary__header">
         <div>
           <h2>{tr("Resume", "Summary")}</h2>
-          <p>{tr("Verifie la configuration puis lance Feedarr.", "Check the configuration then launch Feedarr.")}</p>
+          <p>{tr("Verifie la configuration puis lance Poisonarr.", "Check the configuration then launch Poisonarr.")}</p>
         </div>
       </div>
 
@@ -303,7 +303,7 @@ export default function Step5Summary({ onFinish, finishing }) {
           onClick={handleFinish}
           disabled={finishing}
         >
-          {finishing ? tr("Lancement...", "Launching...") : tr("Lancer Feedarr", "Launch Feedarr")}
+          {finishing ? tr("Lancement...", "Launching...") : tr("Lancer Poisonarr", "Launch Poisonarr")}
           <ArrowRight className="launch-icon" />
         </button>
       </div>

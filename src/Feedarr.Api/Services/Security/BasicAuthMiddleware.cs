@@ -28,6 +28,8 @@ public sealed class BasicAuthMiddleware
         "/api/providers",
         "/api/sources",
         "/api/apps",
+        "/api/app-hub",
+        "/api/stack-setup",
         "/api/categories",
         "/api/jackett/indexers",
         "/api/prowlarr/indexers"
@@ -36,6 +38,7 @@ public sealed class BasicAuthMiddleware
     private static readonly string[] SecuritySetupAllowedApiPrefixes =
     {
         "/api/setup/state",
+        "/api/stack-setup/status",
         "/api/system/onboarding",
         "/api/settings/ui",
         "/api/settings/security"
@@ -216,7 +219,7 @@ public sealed class BasicAuthMiddleware
 
     private static void Challenge(HttpContext context)
     {
-        context.Response.Headers.WWWAuthenticate = "Basic realm=\"Feedarr\"";
+        context.Response.Headers.WWWAuthenticate = "Basic realm=\"Poisonarr\"";
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
     }
 

@@ -1,13 +1,14 @@
 /** Helpers for the sidebar "Alkalmazások" hub. Pure functions (unit tested). */
 
 export const APP_TYPES = [
+  { type: "plex", name: "Plex", icon: "plex", port: 32400 },
   { type: "seerr", name: "Seerr", icon: "popcorn", port: 5055 },
   { type: "prowlarr", name: "Prowlarr", icon: "radar", port: 9696 },
   { type: "sonarr", name: "Sonarr", icon: "tv", port: 8989 },
   { type: "radarr", name: "Radarr", icon: "film", port: 7878 },
   { type: "tautulli", name: "Tautulli", icon: "activity", port: 8181 },
   { type: "qbittorrent", name: "qBittorrent", icon: "download", port: 8090 },
-  { type: "custom", name: "Egyéni", icon: "open_in_new", port: null },
+  { type: "custom", name: "Custom", icon: "open_in_new", port: null },
 ];
 
 export function appIcon(type) {
@@ -15,7 +16,7 @@ export function appIcon(type) {
 }
 
 /**
- * Replaces "{host}" with the host name Feedarr is opened on, so "http://{host}:8989"
+ * Replaces "{host}" with the host name Poisonarr is opened on, so "http://{host}:8989"
  * works from the phone as well as from the PC.
  */
 export function resolveAppUrl(url, hostname) {
