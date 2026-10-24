@@ -1,0 +1,622 @@
+using Microsoft.AspNetCore.Mvc;
+using System.Globalization;
+using Dapper;
+using Feedarr.Api.Data;
+using Feedarr.Api.Data.Repositories;
+using Feedarr.Api.Models;
+using Feedarr.Api.Services.Categories;
+using Feedarr.Api.Services.Igdb;
+using Feedarr.Api.Services.Resilience;
+using Feedarr.Api.Services.Titles;
+using Feedarr.Api.Services.Security;
+using Microsoft.Extensions.Logging;
+
+namespace Feedarr.Api.Controllers;
+
+[ApiController]
+[Route("api/releases")]
+public sealed class ReleasesController : ControllerBase
+{
+    private readonly ReleaseRepository _releases;
+    private readonly Db _db;
+    private readonly TitleParser _parser;
+    private readonly IgdbClient _igdb;
+    private readonly IHttpClientFactory _httpFactory;
+    private readonly ILogger<ReleasesController> _log;
+
+    public ReleasesController(
+        ReleaseRepository releases,
+        Db db,
+        TitleParser parser,
+        IgdbClient igdb,
+        IHttpClientFactory httpFactory,
+        ILogger<ReleasesController> log)
+    {
+        _releases = releases;
+        _db = db;
+        _parser = parser;
+        _igdb = igdb;
+        _httpFactory = httpFactory;
+        _log = log;
+    }
+
+    // GET /api/releases/{id}/download
+    [HttpGet("{id:long}/download")]
+    public async Task<IActionResult> Download([FromRoute] long id, CancellationToken ct)
+    {
+        var url = _releases.GetDownloadUrl(id);
+
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            _log.LogWarning("Download rejected: missing download_url for releaseId={ReleaseId}", id);
+            return NotFound(new { error = "release not found or no download_url" });
+        }
+        if (!OutboundUrlGuard.TryNormalizeDownloadUrl(url, out var normalizedUrl, out _))
+        {
+            _log.LogWarning("Download rejected: invalid download_url for releaseId={ReleaseId}", id);
+            return BadRequest(new { error = "invalid download_url" });
+        }
+
+        var indexerHost = ExtractHostForLog(normalizedUrl);
+
+        // Magnet links are handled directly by the browser's OS protocol handler
+        if (normalizedUrl.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase))
+        {
+            _log.LogInformation("Download magnet redirect for releaseId={ReleaseId}", id);
+            return Redirect(normalizedUrl);
+        }
+
+        // 🔐 Proxy the torrent: the browser never sees the internal Jackett/Prowlarr URL or API key.
+        // Redirecting would fail when the indexer host is only reachable from the server (e.g. Docker network).
+        try
+        {
+            var client = _httpFactory.CreateClient("torrent-download");
+            HttpResponseMessage? response = null;
+            try
+            {
+                var downloadUri = new Uri(normalizedUrl, UriKind.Absolute);
+                if (downloadUri.Scheme is "http" or "https")
+                {
+                    var (allowed, _) = await OutboundUrlGuard.ValidateOutboundHostAsync(downloadUri.Host, ct);
+                    if (!allowed)
+                    {
+                        _log.LogWarning(
+                            "Download rejected: blocked host for releaseId={ReleaseId} host={IndexerHost}",
+                            id,
+                            indexerHost);
+                        return BadRequest(new { error = "download_url host not allowed" });
+                    }
+                }
+
+                using var request = new HttpRequestMessage(HttpMethod.Get, normalizedUrl);
+                request.Options.Set(ProtocolDowngradeRedirectHandler.AllowHttpsToHttpDowngradeOption, true);
+                response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _log.LogWarning(
+                        "Download proxy upstream error for releaseId={ReleaseId} host={IndexerHost} status={StatusCode}",
+                        id,
+                        indexerHost,
+                        (int)response.StatusCode);
+                    response.Dispose();
+                    return StatusCode(502, new { error = "indexer returned an error", status = (int)response.StatusCode });
+                }
+
+                var contentType = response.Content.Headers.ContentType?.ToString()
+                                  ?? "application/x-bittorrent";
+
+                var rawFilename = response.Content.Headers.ContentDisposition?.FileNameStar
+                                  ?? response.Content.Headers.ContentDisposition?.FileName;
+                var filename = SanitizeDownloadFilename(rawFilename);
+
+                const long MaxTorrentBytes = 100 * 1024 * 1024;
+                var declaredLength = response.Content.Headers.ContentLength;
+                if (declaredLength.HasValue && declaredLength.Value > MaxTorrentBytes)
+                {
+                    _log.LogWarning(
+                        "Download proxy rejected oversized response for releaseId={ReleaseId} host={IndexerHost} bytes={Bytes}",
+                        id, indexerHost, declaredLength.Value);
+                    response.Dispose();
+                    return StatusCode(502, new { error = "indexer response too large" });
+                }
+
+                var stream = new BoundedResponseStream(
+                    await response.Content.ReadAsStreamAsync(ct),
+                    response,
+                    MaxTorrentBytes);
+                response = null;
+
+                _log.LogInformation(
+                    "Download proxy success for releaseId={ReleaseId} host={IndexerHost} declaredBytes={DeclaredByteCount}",
+                    id,
+                    indexerHost,
+                    declaredLength);
+                return File(stream, contentType, filename);
+            }
+            catch
+            {
+                response?.Dispose();
+                throw;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _log.LogInformation("Download canceled for releaseId={ReleaseId}", id);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Download proxy failed for releaseId={ReleaseId} host={IndexerHost}", id, indexerHost);
+            return StatusCode(502, new { error = "could not fetch torrent from indexer" });
+        }
+    }
+
+    // POST /api/releases/{id}/seen
+    [HttpPost("{id:long}/seen")]
+    public IActionResult MarkSeen([FromRoute] long id)
+    {
+        using var conn = _db.Open();
+        var rows = conn.Execute("UPDATE releases SET seen = 1 WHERE id = @id", new { id });
+
+        if (rows == 0) return NotFound(new { error = "release not found" });
+
+        return NoContent(); // 204
+    }
+
+    // POST /api/releases/{id}/unseen
+    [HttpPost("{id:long}/unseen")]
+    public IActionResult MarkUnseen([FromRoute] long id)
+    {
+        using var conn = _db.Open();
+        var rows = conn.Execute("UPDATE releases SET seen = 0 WHERE id = @id", new { id });
+
+        if (rows == 0) return NotFound(new { error = "release not found" });
+
+        return NoContent(); // 204
+    }
+
+    // POST /api/releases/seen  { "ids":[1,2,3], "seen": true }
+    public sealed class BulkSeenDto
+    {
+        public List<long> Ids { get; set; } = new();
+        public bool Seen { get; set; } = true;
+    }
+
+    private const int MaxBulkIds = 1000;
+
+    [HttpPost("seen")]
+    public IActionResult BulkSeen([FromBody] BulkSeenDto dto)
+    {
+        if (dto?.Ids == null || dto.Ids.Count == 0)
+        {
+            _log.LogWarning("BulkSeen rejected: ids missing");
+            return BadRequest(new { error = "ids missing" });
+        }
+
+        if (dto.Ids.Count > MaxBulkIds)
+        {
+            _log.LogWarning(
+                "BulkSeen rejected: too many ids count={Count} max={MaxBulkIds}",
+                dto.Ids.Count,
+                MaxBulkIds);
+            return BadRequest(new { error = $"maximum {MaxBulkIds} ids allowed" });
+        }
+
+        using var conn = _db.Open();
+        var distinctIds = dto.Ids.Distinct().ToArray();
+        var totalUpdated = 0;
+
+        for (var i = 0; i < distinctIds.Length; i += 500)
+        {
+            var batch = distinctIds.Skip(i).Take(500).ToArray();
+            totalUpdated += conn.Execute(
+                "UPDATE releases SET seen = @seen WHERE id IN @ids",
+                new { seen = dto.Seen ? 1 : 0, ids = batch }
+            );
+        }
+
+        _log.LogInformation(
+            "BulkSeen applied seen={Seen} requested={RequestedCount} distinct={DistinctCount} updated={UpdatedCount}",
+            dto.Seen,
+            dto.Ids.Count,
+            distinctIds.Length,
+            totalUpdated);
+
+        return Ok(new { ok = true, updated = totalUpdated });
+    }
+
+    private static string SanitizeDownloadFilename(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "download.torrent";
+        // Strip surrounding quotes added by some indexers
+        var name = raw.Trim().Trim('"').Trim();
+        // Keep only safe characters; replace everything else with _
+        name = System.Text.RegularExpressions.Regex.Replace(name, @"[^\w\.\-]", "_");
+        // Prevent reserved Windows filenames and empty results
+        return string.IsNullOrWhiteSpace(name) || name == "." ? "download.torrent" : name;
+    }
+
+    private static string ExtractHostForLog(string? url)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+            !string.IsNullOrWhiteSpace(uri.Host))
+            return uri.Host;
+
+        return "unknown";
+    }
+
+    private sealed class BoundedResponseStream : Stream
+    {
+        private readonly Stream _inner;
+        private readonly HttpResponseMessage _response;
+        private readonly long _maxBytes;
+        private long _bytesRead;
+        private bool _disposed;
+
+        public BoundedResponseStream(Stream inner, HttpResponseMessage response, long maxBytes)
+        {
+            _inner = inner;
+            _response = response;
+            _maxBytes = maxBytes;
+        }
+
+        public override bool CanRead => _inner.CanRead;
+        public override bool CanSeek => _inner.CanSeek;
+        public override bool CanWrite => false;
+        public override long Length => _inner.Length;
+        public override long Position
+        {
+            get => _inner.Position;
+            set => _inner.Position = value;
+        }
+
+        public override void Flush() => _inner.Flush();
+        public override long Seek(long offset, SeekOrigin origin) => _inner.Seek(offset, origin);
+        public override void SetLength(long value) => _inner.SetLength(value);
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var read = _inner.Read(buffer, offset, count);
+            CountBytes(read);
+            return read;
+        }
+
+        public override int Read(Span<byte> buffer)
+        {
+            var read = _inner.Read(buffer);
+            CountBytes(read);
+            return read;
+        }
+
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            var read = await _inner.ReadAsync(buffer.AsMemory(offset, count), cancellationToken).ConfigureAwait(false);
+            CountBytes(read);
+            return read;
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var read = await _inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            CountBytes(read);
+            return read;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (_disposed)
+                return;
+
+            if (disposing)
+            {
+                _inner.Dispose();
+                _response.Dispose();
+            }
+
+            _disposed = true;
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            if (_disposed)
+                return;
+
+            await _inner.DisposeAsync().ConfigureAwait(false);
+            _response.Dispose();
+            _disposed = true;
+            await base.DisposeAsync().ConfigureAwait(false);
+        }
+
+        private void CountBytes(int read)
+        {
+            if (read <= 0)
+                return;
+
+            _bytesRead += read;
+            if (_bytesRead > _maxBytes)
+                throw new IOException("indexer response too large");
+        }
+    }
+
+    public sealed class UpdateTitleDto
+    {
+        public string? Title { get; set; }
+    }
+
+    // PUT /api/releases/{id}/title  { "title": "..." }
+    [HttpPost("{id:long}/title")]
+    [HttpPut("{id:long}/title")]
+    public IActionResult UpdateTitle([FromRoute] long id, [FromBody] UpdateTitleDto dto)
+    {
+        var title = (dto?.Title ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(title))
+            return BadRequest(new { error = "title missing" });
+
+        using var conn = _db.Open();
+        var unifiedValue = conn.ExecuteScalar<string?>(
+            "SELECT unified_category FROM releases WHERE id = @id",
+            new { id });
+        UnifiedCategoryMappings.TryParse(unifiedValue, out var unifiedCategory);
+
+        var parsed = _parser.Parse(title, unifiedCategory);
+        var rows = conn.Execute(
+            """
+            UPDATE releases
+            SET title = @title,
+                title_manual_override = 1,
+                title_clean = @titleClean,
+                year = @year,
+                season = @season,
+                episode = @episode,
+                resolution = @resolution,
+                source = @source,
+                codec = @codec,
+                release_group = @releaseGroup,
+                media_type = @mediaType
+            WHERE id = @id;
+            """,
+            new
+            {
+                id,
+                title,
+                titleClean = parsed.TitleClean,
+                year = parsed.Year,
+                season = parsed.Season,
+                episode = parsed.Episode,
+                resolution = parsed.Resolution,
+                source = parsed.Source,
+                codec = parsed.Codec,
+                releaseGroup = parsed.ReleaseGroup,
+                mediaType = parsed.MediaType
+            }
+        );
+
+        if (rows == 0)
+        {
+            _log.LogWarning("UpdateTitle: release not found releaseId={ReleaseId}", id);
+            return NotFound(new { error = "release not found" });
+        }
+
+        _log.LogInformation(
+            "UpdateTitle: applied releaseId={ReleaseId} title={Title} mediaType={MediaType}",
+            id, title, parsed.MediaType);
+
+        return Ok(new
+        {
+            id,
+            title,
+            titleClean = parsed.TitleClean,
+            year = parsed.Year,
+            season = parsed.Season,
+            episode = parsed.Episode,
+            resolution = parsed.Resolution,
+            source = parsed.Source,
+            codec = parsed.Codec,
+            releaseGroup = parsed.ReleaseGroup,
+            mediaType = parsed.MediaType,
+            unifiedCategory = unifiedCategory.ToString()
+        });
+    }
+
+    // POST /api/releases/{id}/rename  { "title": "..." }
+    [HttpPost("{id:long}/rename")]
+    public IActionResult Rename([FromRoute] long id, [FromBody] UpdateTitleDto dto)
+    {
+        var title = (dto?.Title ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(title))
+            return BadRequest(new { error = "title missing" });
+
+        var row = _releases.RenameAndRebindEntity(id, title) as ReleaseRepository.RenameRebindResult;
+        if (row is null)
+        {
+            _log.LogWarning("Rename: release not found releaseId={ReleaseId}", id);
+            return NotFound(new { error = "release not found" });
+        }
+
+        var entityId = row.EntityId;
+        var posterUpdatedAtTs = row.PosterUpdatedAtTs ?? 0;
+        string? posterUrl = null;
+
+        if (entityId.HasValue && entityId.Value > 0 && !string.IsNullOrWhiteSpace(row.EntityPosterFile))
+        {
+            posterUrl = $"/api/posters/entity/{entityId.Value}?v={posterUpdatedAtTs}";
+        }
+        else if (!string.IsNullOrWhiteSpace(row.PosterFile))
+        {
+            posterUrl = $"/api/posters/release/{row.ReleaseId}?v={posterUpdatedAtTs}";
+        }
+
+        _log.LogInformation(
+            "Rename: applied releaseId={ReleaseId} title={Title} entityId={EntityId} mediaType={MediaType}",
+            row.ReleaseId, row.Title, entityId, row.MediaType);
+
+        return Ok(new
+        {
+            releaseId = row.ReleaseId,
+            entityId,
+            title = row.Title,
+            titleClean = row.TitleClean,
+            year = row.Year,
+            season = row.Season,
+            episode = row.Episode,
+            resolution = row.Resolution,
+            source = row.Source,
+            codec = row.Codec,
+            releaseGroup = row.ReleaseGroup,
+            mediaType = row.MediaType,
+            unifiedCategory = row.UnifiedCategory,
+            posterFile = row.PosterFile,
+            posterUpdatedAtTs,
+            posterUrl,
+            tmdbId = row.TmdbId,
+            tvdbId = row.TvdbId
+        });
+    }
+
+    // POST /api/releases/{id}/details/igdb
+    [HttpPost("{id:long}/details/igdb")]
+    public async Task<IActionResult> FetchIgdbDetails([FromRoute] long id, [FromQuery] bool? force, CancellationToken ct)
+    {
+        var r = _releases.GetForPoster(id);
+        if (r is null) return NotFound(new { error = "release not found" });
+
+        var unifiedValue = (string?)r.UnifiedCategory;
+        UnifiedCategoryMappings.TryParse(unifiedValue, out var unifiedCategory);
+        var isGame = unifiedCategory == UnifiedCategory.JeuWindows;
+        if (!isGame && force != true)
+            return BadRequest(new { error = "release is not a game" });
+
+        var extOverview = (string?)r.ExtOverview;
+        var extReleaseDate = (string?)r.ExtReleaseDate;
+        var extGenres = (string?)r.ExtGenres;
+        var extRating = r.ExtRating is null ? (double?)null : Convert.ToDouble(r.ExtRating);
+        var extVotes = r.ExtVotes is null ? (int?)null : Convert.ToInt32(r.ExtVotes);
+        var extProvider = (string?)r.ExtProvider;
+        var extProviderId = (string?)r.ExtProviderId;
+
+        var hasDetails =
+            !string.IsNullOrWhiteSpace(extOverview) ||
+            !string.IsNullOrWhiteSpace(extReleaseDate) ||
+            !string.IsNullOrWhiteSpace(extGenres) ||
+            (extRating is not null && extRating > 0) ||
+            (extVotes is not null && extVotes > 0);
+
+        if (hasDetails && force != true)
+        {
+            return Ok(new
+            {
+                ok = true,
+                cached = true,
+                details = new
+                {
+                    overview = extOverview,
+                    releaseDate = extReleaseDate,
+                    genres = extGenres,
+                    rating = extRating,
+                    ratingVotes = extVotes,
+                    detailsProvider = extProvider,
+                    detailsProviderId = extProviderId
+                }
+            });
+        }
+
+        int? igdbId = null;
+        if (string.Equals(extProvider, "igdb", StringComparison.OrdinalIgnoreCase) &&
+            int.TryParse(extProviderId, out var extIgdbId))
+        {
+            igdbId = extIgdbId;
+        }
+
+        var posterProvider = (string?)r.PosterProvider;
+        var posterProviderId = (string?)r.PosterProviderId;
+        if (!igdbId.HasValue &&
+            string.Equals(posterProvider, "igdb", StringComparison.OrdinalIgnoreCase) &&
+            int.TryParse(posterProviderId, out var posterIgdbId))
+        {
+            igdbId = posterIgdbId;
+        }
+
+        try
+        {
+            if (!igdbId.HasValue)
+            {
+                var title = (string?)r.TitleClean ?? (string?)r.Title ?? "";
+                var year = r.Year is null ? (int?)null : Convert.ToInt32(r.Year);
+                if (string.IsNullOrWhiteSpace(title))
+                    return BadRequest(new { error = "title missing" });
+
+                var match = await _igdb.SearchGameCoverAsync(title, year, ct);
+                if (match is null)
+                    return NotFound(new { error = "igdb match not found" });
+
+                igdbId = match.Value.igdbId;
+            }
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+        {
+            return StatusCode(429, new { error = "igdb rate limit exceeded, retry later" });
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "FetchIgdbDetails: igdb search failed for releaseId={ReleaseId}", id);
+            return StatusCode(502, new { error = "igdb search unavailable" });
+        }
+
+        IgdbClient.DetailsResult? details;
+        try
+        {
+            details = await _igdb.GetGameDetailsAsync(igdbId.Value, ct);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+        {
+            return StatusCode(429, new { error = "igdb rate limit exceeded, retry later" });
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "FetchIgdbDetails: igdb details failed for igdbId={IgdbId}", igdbId!.Value);
+            return StatusCode(502, new { error = "igdb details unavailable" });
+        }
+        if (details is null)
+            return StatusCode(502, new { error = "igdb details not available" });
+
+        _releases.UpdateExternalDetails(
+            id,
+            "igdb",
+            igdbId.Value.ToString(CultureInfo.InvariantCulture),
+            details.Title,
+            details.Summary,
+            null,
+            details.Genres,
+            details.ReleaseDate,
+            null,
+            details.Rating,
+            details.Votes,
+            null,
+            null,
+            null
+        );
+
+        return Ok(new
+        {
+            ok = true,
+            details = new
+            {
+                overview = details.Summary,
+                releaseDate = details.ReleaseDate,
+                genres = details.Genres,
+                rating = details.Rating,
+                ratingVotes = details.Votes,
+                detailsProvider = "igdb",
+                detailsProviderId = igdbId.Value.ToString(CultureInfo.InvariantCulture),
+                igdbUrl = details.Url
+            }
+        });
+    }
+
+}

@@ -1,0 +1,986 @@
+using System.Text.Json;
+using Dapper;
+using Feedarr.Api.Data;
+using Feedarr.Api.Models.Settings;
+using Feedarr.Api.Services.Security;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+
+namespace Feedarr.Api.Data.Repositories;
+
+public sealed class SettingsRepository
+{
+    public sealed record BadgesRelevantSettingsSnapshot(
+        bool BadgeInfo,
+        bool BadgeWarn,
+        bool BadgeError,
+        bool HasTmdbApiKey,
+        bool HasIgdbClientId,
+        bool HasIgdbClientSecret,
+        bool HasAdvancedMaintenanceEnabled);
+
+    private readonly Db _db;
+    private readonly IApiKeyProtectionService _keyProtection;
+    private readonly ILogger<SettingsRepository> _logger;
+
+    private static readonly string[] ExternalApiKeySettingKeys =
+    {
+        "tmdb_api_key",
+        "tvmaze_api_key",
+        "fanart_api_key",
+        "igdb_client_id",
+        "igdb_client_secret"
+    };
+
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false
+    };
+
+    public SettingsRepository(Db db)
+        : this(db, new PassthroughApiKeyProtectionService(), NullLogger<SettingsRepository>.Instance)
+    {
+    }
+
+    public SettingsRepository(
+        Db db,
+        IApiKeyProtectionService keyProtection,
+        ILogger<SettingsRepository> logger)
+    {
+        _db = db;
+        _keyProtection = keyProtection;
+        _logger = logger;
+    }
+
+    // --------------------
+    // GENERAL
+    // --------------------
+    public GeneralSettings GetGeneral(GeneralSettings defaults)
+    {
+        var json = GetRaw("general");
+        if (string.IsNullOrWhiteSpace(json))
+            return ApplyArrSettings(defaults, GetArr(ArrSettings.BuildDefaults()));
+
+        try
+        {
+            var loaded = JsonSerializer.Deserialize<GeneralSettings>(json, JsonOpts);
+            if (loaded is null) return defaults;
+
+            defaults.SyncIntervalMinutes = loaded.SyncIntervalMinutes != 0 ? loaded.SyncIntervalMinutes : defaults.SyncIntervalMinutes;
+            defaults.RssLimit = loaded.RssLimit != 0 ? loaded.RssLimit : defaults.RssLimit;
+            defaults.RssLimitPerCategory = loaded.RssLimitPerCategory != 0
+                ? loaded.RssLimitPerCategory
+                : (loaded.RssLimit != 0 ? loaded.RssLimit : defaults.RssLimitPerCategory);
+            defaults.RssLimitGlobalPerSource = loaded.RssLimitGlobalPerSource != 0
+                ? loaded.RssLimitGlobalPerSource
+                : defaults.RssLimitGlobalPerSource;
+            if (json.Contains("autoSyncEnabled", StringComparison.OrdinalIgnoreCase))
+                defaults.AutoSyncEnabled = loaded.AutoSyncEnabled;
+            if (json.Contains("arrSyncIntervalMinutes", StringComparison.OrdinalIgnoreCase) &&
+                loaded.ArrSyncIntervalMinutes > 0)
+            {
+                defaults.ArrSyncIntervalMinutes = loaded.ArrSyncIntervalMinutes;
+            }
+            if (json.Contains("arrAutoSyncEnabled", StringComparison.OrdinalIgnoreCase))
+                defaults.ArrAutoSyncEnabled = loaded.ArrAutoSyncEnabled;
+            if (json.Contains("requestIntegrationMode", StringComparison.OrdinalIgnoreCase))
+            {
+                var mode = (loaded.RequestIntegrationMode ?? "arr").Trim().ToLowerInvariant();
+                defaults.RequestIntegrationMode = mode is "overseerr" or "jellyseerr" or "seer" ? mode : "arr";
+            }
+            return ApplyArrSettings(defaults, GetArr(ArrSettings.BuildDefaults()));
+        }
+        catch
+        {
+            return ApplyArrSettings(defaults, GetArr(ArrSettings.BuildDefaults()));
+        }
+    }
+
+    public void SaveGeneral(GeneralSettings settings)
+    {
+        Upsert("general", JsonSerializer.Serialize(settings, JsonOpts));
+        SaveArr(ProjectArrSettings(settings));
+    }
+
+    // --------------------
+    // UI
+    // --------------------
+    public UiSettings GetUi(UiSettings defaults)
+    {
+        var json = GetRaw("ui");
+        if (string.IsNullOrWhiteSpace(json)) return defaults;
+
+        try
+        {
+            var loaded = JsonSerializer.Deserialize<UiSettings>(json, JsonOpts);
+            if (loaded is null) return defaults;
+
+            if (json.Contains("uiLanguage", StringComparison.OrdinalIgnoreCase))
+                defaults.UiLanguage = UiLanguageCatalog.NormalizeUiLanguage(loaded.UiLanguage);
+            if (json.Contains("mediaInfoLanguage", StringComparison.OrdinalIgnoreCase))
+                defaults.MediaInfoLanguage = UiLanguageCatalog.NormalizeMediaInfoLanguage(loaded.MediaInfoLanguage);
+            defaults.HideSeenByDefault = loaded.HideSeenByDefault;
+            defaults.ShowCategories = loaded.ShowCategories;
+            if (json.Contains("showTop24DedupeControl", StringComparison.OrdinalIgnoreCase))
+                defaults.ShowTop24DedupeControl = loaded.ShowTop24DedupeControl;
+            if (json.Contains("enableMissingPosterView", StringComparison.OrdinalIgnoreCase))
+                defaults.EnableMissingPosterView = loaded.EnableMissingPosterView;
+            defaults.DefaultView = string.IsNullOrWhiteSpace(loaded.DefaultView) ? defaults.DefaultView : loaded.DefaultView;
+            if (json.Contains("badgeInfo", StringComparison.OrdinalIgnoreCase))
+                defaults.BadgeInfo = loaded.BadgeInfo;
+            if (json.Contains("badgeWarn", StringComparison.OrdinalIgnoreCase))
+                defaults.BadgeWarn = loaded.BadgeWarn;
+            if (json.Contains("badgeError", StringComparison.OrdinalIgnoreCase))
+                defaults.BadgeError = loaded.BadgeError;
+            if (json.Contains("theme", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(loaded.Theme))
+                defaults.Theme = loaded.Theme;
+            if (json.Contains("animationsEnabled", StringComparison.OrdinalIgnoreCase))
+                defaults.AnimationsEnabled = loaded.AnimationsEnabled;
+            if (json.Contains("onboardingDone", StringComparison.OrdinalIgnoreCase))
+                defaults.OnboardingDone = loaded.OnboardingDone;
+            if (json.Contains("defaultSort", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(loaded.DefaultSort))
+                defaults.DefaultSort = loaded.DefaultSort;
+            if (json.Contains("defaultMaxAgeDays", StringComparison.OrdinalIgnoreCase))
+                defaults.DefaultMaxAgeDays = loaded.DefaultMaxAgeDays;
+            if (json.Contains("defaultLimit", StringComparison.OrdinalIgnoreCase))
+                defaults.DefaultLimit = loaded.DefaultLimit;
+            if (json.Contains("defaultFilterSeen", StringComparison.OrdinalIgnoreCase))
+                defaults.DefaultFilterSeen = loaded.DefaultFilterSeen;
+            if (json.Contains("defaultFilterApplication", StringComparison.OrdinalIgnoreCase))
+                defaults.DefaultFilterApplication = loaded.DefaultFilterApplication;
+            if (json.Contains("defaultFilterSourceId", StringComparison.OrdinalIgnoreCase))
+                defaults.DefaultFilterSourceId = loaded.DefaultFilterSourceId;
+            if (json.Contains("defaultFilterCategoryId", StringComparison.OrdinalIgnoreCase))
+                defaults.DefaultFilterCategoryId = loaded.DefaultFilterCategoryId;
+            if (json.Contains("defaultFilterQuality", StringComparison.OrdinalIgnoreCase))
+                defaults.DefaultFilterQuality = loaded.DefaultFilterQuality;
+            return defaults;
+        }
+        catch
+        {
+            return defaults;
+        }
+    }
+
+    public void SaveUi(UiSettings settings)
+        => Upsert("ui", JsonSerializer.Serialize(settings, JsonOpts));
+
+    public UiSettings GetUiSettings(UiSettings? defaults = null)
+        => GetUi(defaults ?? UiSettings.BuildDefaults());
+
+    public UiSettings PutUiSettings(UiSettings settings)
+    {
+        SaveUi(settings);
+        return settings;
+    }
+
+    // --------------------
+    // ARR
+    // --------------------
+    public ArrSettings GetArr(ArrSettings defaults)
+    {
+        var json = GetRaw("arr");
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return ProjectArrSettingsFromGeneral(defaults);
+        }
+
+        try
+        {
+            var loaded = JsonSerializer.Deserialize<ArrSettings>(json, JsonOpts);
+            if (loaded is null)
+                return ProjectArrSettingsFromGeneral(defaults);
+
+            if (json.Contains("arrSyncIntervalMinutes", StringComparison.OrdinalIgnoreCase) &&
+                loaded.ArrSyncIntervalMinutes > 0)
+            {
+                defaults.ArrSyncIntervalMinutes = loaded.ArrSyncIntervalMinutes;
+            }
+
+            if (json.Contains("arrAutoSyncEnabled", StringComparison.OrdinalIgnoreCase))
+                defaults.ArrAutoSyncEnabled = loaded.ArrAutoSyncEnabled;
+
+            if (json.Contains("requestIntegrationMode", StringComparison.OrdinalIgnoreCase))
+            {
+                var mode = (loaded.RequestIntegrationMode ?? "arr").Trim().ToLowerInvariant();
+                defaults.RequestIntegrationMode = mode is "overseerr" or "jellyseerr" or "seer" ? mode : "arr";
+            }
+
+            return defaults;
+        }
+        catch
+        {
+            return ProjectArrSettingsFromGeneral(defaults);
+        }
+    }
+
+    public void SaveArr(ArrSettings settings)
+        => Upsert("arr", JsonSerializer.Serialize(settings, JsonOpts));
+
+    public ArrSettings GetArrSettings(ArrSettings? defaults = null)
+        => GetArr(defaults ?? ArrSettings.BuildDefaults());
+
+    public ArrSettings PutArrSettings(ArrSettings settings)
+    {
+        SaveArr(settings);
+        return settings;
+    }
+
+    // --------------------
+    // MAINTENANCE
+    // --------------------
+    public MaintenanceSettings GetMaintenance(MaintenanceSettings defaults)
+    {
+        var json = GetRaw("maintenance");
+        if (string.IsNullOrWhiteSpace(json)) return defaults;
+
+        try
+        {
+            var loaded = JsonSerializer.Deserialize<MaintenanceSettings>(json, JsonOpts);
+            if (loaded is null) return defaults;
+
+            if (json.Contains("maintenanceAdvancedOptionsEnabled", StringComparison.OrdinalIgnoreCase))
+                defaults.MaintenanceAdvancedOptionsEnabled = loaded.MaintenanceAdvancedOptionsEnabled;
+            if (json.Contains("syncSourcesMaxConcurrency", StringComparison.OrdinalIgnoreCase) &&
+                loaded.SyncSourcesMaxConcurrency > 0)
+            {
+                defaults.SyncSourcesMaxConcurrency = loaded.SyncSourcesMaxConcurrency;
+            }
+            if (json.Contains("posterWorkers", StringComparison.OrdinalIgnoreCase) &&
+                loaded.PosterWorkers > 0)
+            {
+                defaults.PosterWorkers = loaded.PosterWorkers;
+            }
+            if (json.Contains("providerRateLimitMode", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(loaded.ProviderRateLimitMode))
+            {
+                defaults.ProviderRateLimitMode = loaded.ProviderRateLimitMode;
+            }
+            if (json.Contains("providerConcurrencyManual", StringComparison.OrdinalIgnoreCase))
+            {
+                var manual = loaded.ProviderConcurrencyManual ?? new ProviderConcurrencyManualSettings();
+                defaults.ProviderConcurrencyManual = new ProviderConcurrencyManualSettings
+                {
+                    Tmdb = manual.Tmdb > 0 ? manual.Tmdb : defaults.ProviderConcurrencyManual.Tmdb,
+                    Igdb = manual.Igdb > 0 ? manual.Igdb : defaults.ProviderConcurrencyManual.Igdb,
+                    Fanart = manual.Fanart > 0 ? manual.Fanart : defaults.ProviderConcurrencyManual.Fanart,
+                    Tvmaze = manual.Tvmaze > 0 ? manual.Tvmaze : defaults.ProviderConcurrencyManual.Tvmaze,
+                    Others = manual.Others > 0 ? manual.Others : defaults.ProviderConcurrencyManual.Others,
+                };
+            }
+            if (json.Contains("syncRunTimeoutMinutes", StringComparison.OrdinalIgnoreCase) &&
+                loaded.SyncRunTimeoutMinutes > 0)
+            {
+                defaults.SyncRunTimeoutMinutes = loaded.SyncRunTimeoutMinutes;
+            }
+
+            return defaults;
+        }
+        catch
+        {
+            return defaults;
+        }
+    }
+
+    public void SaveMaintenance(MaintenanceSettings settings)
+        => Upsert("maintenance", JsonSerializer.Serialize(settings, JsonOpts));
+
+    // --------------------
+    // SECURITY
+    // --------------------
+    public SecuritySettings GetSecurity(SecuritySettings defaults)
+    {
+        var json = GetRaw("security");
+        if (string.IsNullOrWhiteSpace(json)) return defaults;
+
+        try
+        {
+            var loaded = JsonSerializer.Deserialize<SecuritySettings>(json, JsonOpts);
+            if (loaded is null) return defaults;
+
+            if (json.Contains("authMode", StringComparison.OrdinalIgnoreCase))
+            {
+                defaults.AuthMode = loaded.AuthMode ?? defaults.AuthMode;
+            }
+            else
+            {
+                var legacyAuth = (loaded.Authentication ?? defaults.Authentication).Trim().ToLowerInvariant();
+                var legacyRequired = (loaded.AuthenticationRequired ?? defaults.AuthenticationRequired).Trim().ToLowerInvariant();
+                defaults.AuthMode = legacyAuth switch
+                {
+                    "none" => "open",
+                    "basic" when legacyRequired == "all" => "strict",
+                    "basic" => "smart",
+                    _ => defaults.AuthMode
+                };
+            }
+            if (!string.IsNullOrWhiteSpace(loaded.Authentication))
+                defaults.Authentication = loaded.Authentication;
+            if (!string.IsNullOrWhiteSpace(loaded.AuthenticationRequired))
+                defaults.AuthenticationRequired = loaded.AuthenticationRequired;
+            if (json.Contains("publicBaseUrl", StringComparison.OrdinalIgnoreCase))
+                defaults.PublicBaseUrl = loaded.PublicBaseUrl ?? defaults.PublicBaseUrl;
+            if (json.Contains("username", StringComparison.OrdinalIgnoreCase))
+                defaults.Username = loaded.Username ?? defaults.Username;
+            if (json.Contains("passwordHash", StringComparison.OrdinalIgnoreCase))
+                defaults.PasswordHash = loaded.PasswordHash ?? defaults.PasswordHash;
+            if (json.Contains("passwordSalt", StringComparison.OrdinalIgnoreCase))
+                defaults.PasswordSalt = loaded.PasswordSalt ?? defaults.PasswordSalt;
+
+            return defaults;
+        }
+        catch
+        {
+            return defaults;
+        }
+    }
+
+    public void SaveSecurity(SecuritySettings settings)
+        => Upsert("security", JsonSerializer.Serialize(settings, JsonOpts));
+
+    public SecuritySettings GetSecuritySettings(SecuritySettings? defaults = null)
+        => GetSecurity(defaults ?? SecuritySettings.BuildDefaults());
+
+    public SecuritySettings PutSecuritySettings(SecuritySettings settings)
+    {
+        SaveSecurity(settings);
+        return settings;
+    }
+
+    // --------------------
+    // EXTERNAL (TMDB / TVMAZE / FANART / IGDB)
+    // Stockage: 3 clés séparées dans app_settings:
+    // - tmdb_api_key
+    // - tvmaze_api_key
+    // - fanart_api_key
+    // - igdb_client_id
+    // - igdb_client_secret
+    // - tvmaze_enabled
+    // + fallback legacy: JSON sous la clé "external"
+    // --------------------
+
+    // ⚠️ Si tu n’as pas encore ce model, il doit exister:
+    // public sealed class ExternalSettings { public string? TmdbApiKey {get;set;} public string? IgdbClientId {get;set;} public string? IgdbClientSecret {get;set;} }
+
+    public ExternalSettings GetExternal(ExternalSettings defaults)
+    {
+        defaults.TvmazeEnabled ??= true;
+
+        // 1) Nouveau format (clés séparées)
+        var tmdbRaw = GetRaw("tmdb_api_key");
+        var tvmazeRaw = GetRaw("tvmaze_api_key");
+        var fanartRaw = GetRaw("fanart_api_key");
+        var igdbIdRaw = GetRaw("igdb_client_id");
+        var igdbSecretRaw = GetRaw("igdb_client_secret");
+
+        var tmdbEnabled = GetStringSetting("tmdb_enabled");
+        var tvmazeEnabled = GetStringSetting("tvmaze_enabled");
+        var fanartEnabled = GetStringSetting("fanart_enabled");
+        var igdbEnabled = GetStringSetting("igdb_enabled");
+
+        // si au moins une clé existe dans ce format => on l’utilise
+        if (tmdbRaw is not null || tvmazeRaw is not null || fanartRaw is not null || igdbIdRaw is not null || igdbSecretRaw is not null || tmdbEnabled is not null || tvmazeEnabled is not null || fanartEnabled is not null || igdbEnabled is not null)
+        {
+            defaults.TmdbApiKey = GetExternalApiKeySetting("tmdb_api_key") ?? defaults.TmdbApiKey;
+            defaults.TvmazeApiKey = GetExternalApiKeySetting("tvmaze_api_key") ?? defaults.TvmazeApiKey;
+            defaults.FanartApiKey = GetExternalApiKeySetting("fanart_api_key") ?? defaults.FanartApiKey;
+            defaults.IgdbClientId = GetExternalApiKeySetting("igdb_client_id") ?? defaults.IgdbClientId;
+            defaults.IgdbClientSecret = GetExternalApiKeySetting("igdb_client_secret") ?? defaults.IgdbClientSecret;
+            defaults.TmdbEnabled = ParseBoolSetting(tmdbEnabled) ?? defaults.TmdbEnabled;
+            defaults.TvmazeEnabled = ParseBoolSetting(tvmazeEnabled) ?? defaults.TvmazeEnabled;
+            defaults.FanartEnabled = ParseBoolSetting(fanartEnabled) ?? defaults.FanartEnabled;
+            defaults.IgdbEnabled = ParseBoolSetting(igdbEnabled) ?? defaults.IgdbEnabled;
+            return defaults;
+        }
+
+        // 2) Fallback legacy (JSON "external")
+        var json = GetRaw("external");
+        if (string.IsNullOrWhiteSpace(json)) return defaults;
+
+        try
+        {
+            var loaded = JsonSerializer.Deserialize<ExternalSettings>(json, JsonOpts);
+            if (loaded is null) return defaults;
+
+            defaults.TmdbApiKey = UnprotectExternalApiKey(loaded.TmdbApiKey) ?? defaults.TmdbApiKey;
+            defaults.TvmazeApiKey = UnprotectExternalApiKey(loaded.TvmazeApiKey) ?? defaults.TvmazeApiKey;
+            defaults.FanartApiKey = UnprotectExternalApiKey(loaded.FanartApiKey) ?? defaults.FanartApiKey;
+            defaults.IgdbClientId = UnprotectExternalApiKey(loaded.IgdbClientId) ?? defaults.IgdbClientId;
+            defaults.IgdbClientSecret = UnprotectExternalApiKey(loaded.IgdbClientSecret) ?? defaults.IgdbClientSecret;
+            defaults.TmdbEnabled = loaded.TmdbEnabled ?? defaults.TmdbEnabled;
+            defaults.TvmazeEnabled = loaded.TvmazeEnabled ?? defaults.TvmazeEnabled;
+            defaults.FanartEnabled = loaded.FanartEnabled ?? defaults.FanartEnabled;
+            defaults.IgdbEnabled = loaded.IgdbEnabled ?? defaults.IgdbEnabled;
+
+            TryMigrateLegacyExternalJson(defaults);
+            return defaults;
+        }
+        catch
+        {
+            return defaults;
+        }
+    }
+
+    /// <summary>
+    /// Update partiel: si champ null/whitespace => on ne touche pas (style Sonarr)
+    /// Stocke dans le nouveau format (clés séparées).
+    /// </summary>
+    public ExternalSettings SaveExternalPartial(ExternalSettings dto)
+    {
+        var current = GetExternal(new ExternalSettings());
+
+        if (dto.TmdbApiKey is not null)
+            current.TmdbApiKey = dto.TmdbApiKey.Trim();
+
+        if (dto.TvmazeApiKey is not null)
+            current.TvmazeApiKey = dto.TvmazeApiKey.Trim();
+
+        if (dto.FanartApiKey is not null)
+            current.FanartApiKey = dto.FanartApiKey.Trim();
+
+        if (dto.IgdbClientId is not null)
+            current.IgdbClientId = dto.IgdbClientId.Trim();
+
+        if (dto.IgdbClientSecret is not null)
+            current.IgdbClientSecret = dto.IgdbClientSecret.Trim();
+
+        if (dto.TmdbEnabled is not null)
+            current.TmdbEnabled = dto.TmdbEnabled;
+        if (dto.TvmazeEnabled is not null)
+            current.TvmazeEnabled = dto.TvmazeEnabled;
+        if (dto.FanartEnabled is not null)
+            current.FanartEnabled = dto.FanartEnabled;
+        if (dto.IgdbEnabled is not null)
+            current.IgdbEnabled = dto.IgdbEnabled;
+
+        // ✅ stocke en clés séparées (value_json = JSON string), chiffrées
+        UpsertExternalApiKeySetting("tmdb_api_key", current.TmdbApiKey);
+        UpsertExternalApiKeySetting("tvmaze_api_key", current.TvmazeApiKey);
+        UpsertExternalApiKeySetting("fanart_api_key", current.FanartApiKey);
+        UpsertExternalApiKeySetting("igdb_client_id", current.IgdbClientId);
+        UpsertExternalApiKeySetting("igdb_client_secret", current.IgdbClientSecret);
+        UpsertStringSetting("tmdb_enabled", current.TmdbEnabled == false ? "0" : "1");
+        UpsertStringSetting("tvmaze_enabled", current.TvmazeEnabled == false ? "0" : "1");
+        UpsertStringSetting("fanart_enabled", current.FanartEnabled == false ? "0" : "1");
+        UpsertStringSetting("igdb_enabled", current.IgdbEnabled == false ? "0" : "1");
+
+        return current;
+    }
+
+    // Pour ton endpoint /api/settings/external (flags)
+    public (bool hasTmdbApiKey, bool hasFanartApiKey, bool hasIgdbClientId, bool hasIgdbClientSecret) GetExternalFlags()
+    {
+        var ex = GetExternal(new ExternalSettings());
+        return (
+            !string.IsNullOrWhiteSpace(ex.TmdbApiKey),
+            !string.IsNullOrWhiteSpace(ex.FanartApiKey),
+            !string.IsNullOrWhiteSpace(ex.IgdbClientId),
+            !string.IsNullOrWhiteSpace(ex.IgdbClientSecret)
+        );
+    }
+
+    public BadgesRelevantSettingsSnapshot GetBadgesRelevantSettingsSnapshot()
+    {
+        using var conn = _db.Open();
+        var rows = conn.Query<SettingsKeyValueRow>(
+            """
+            SELECT key as Key, value_json as ValueJson
+            FROM app_settings
+            WHERE key IN (
+              'ui',
+              'maintenance',
+              'tmdb_api_key',
+              'igdb_client_id',
+              'igdb_client_secret',
+              'tmdb_enabled',
+              'tvmaze_enabled',
+              'fanart_enabled',
+              'igdb_enabled',
+              'external'
+            );
+            """);
+
+        var byKey = rows
+            .Where(r => !string.IsNullOrWhiteSpace(r.Key))
+            .ToDictionary(r => r.Key!, r => r.ValueJson, StringComparer.Ordinal);
+
+        var badgeInfo = UiSettings.BuildDefaults().BadgeInfo;
+        var badgeWarn = UiSettings.BuildDefaults().BadgeWarn;
+        var badgeError = UiSettings.BuildDefaults().BadgeError;
+
+        if (byKey.TryGetValue("ui", out var uiJson) && !string.IsNullOrWhiteSpace(uiJson))
+        {
+            try
+            {
+                var loaded = JsonSerializer.Deserialize<UiSettings>(uiJson, JsonOpts);
+                if (loaded is not null)
+                {
+                    if (uiJson.Contains("badgeInfo", StringComparison.OrdinalIgnoreCase))
+                        badgeInfo = loaded.BadgeInfo;
+                    if (uiJson.Contains("badgeWarn", StringComparison.OrdinalIgnoreCase))
+                        badgeWarn = loaded.BadgeWarn;
+                    if (uiJson.Contains("badgeError", StringComparison.OrdinalIgnoreCase))
+                        badgeError = loaded.BadgeError;
+                }
+            }
+            catch
+            {
+                // Keep defaults.
+            }
+        }
+
+        var advancedMaintenance = new MaintenanceSettings().MaintenanceAdvancedOptionsEnabled;
+        if (byKey.TryGetValue("maintenance", out var maintenanceJson) && !string.IsNullOrWhiteSpace(maintenanceJson))
+        {
+            try
+            {
+                var loaded = JsonSerializer.Deserialize<MaintenanceSettings>(maintenanceJson, JsonOpts);
+                if (loaded is not null &&
+                    maintenanceJson.Contains("maintenanceAdvancedOptionsEnabled", StringComparison.OrdinalIgnoreCase))
+                {
+                    advancedMaintenance = loaded.MaintenanceAdvancedOptionsEnabled;
+                }
+            }
+            catch
+            {
+                // Keep defaults.
+            }
+        }
+
+        var hasDedicatedExternalKeys = byKey.ContainsKey("tmdb_api_key")
+            || byKey.ContainsKey("igdb_client_id")
+            || byKey.ContainsKey("igdb_client_secret")
+            || byKey.ContainsKey("tmdb_enabled")
+            || byKey.ContainsKey("tvmaze_enabled")
+            || byKey.ContainsKey("fanart_enabled")
+            || byKey.ContainsKey("igdb_enabled");
+
+        bool hasTmdbApiKey;
+        bool hasIgdbClientId;
+        bool hasIgdbClientSecret;
+
+        if (hasDedicatedExternalKeys)
+        {
+            hasTmdbApiKey = HasPopulatedStringSetting(byKey, "tmdb_api_key");
+            hasIgdbClientId = HasPopulatedStringSetting(byKey, "igdb_client_id");
+            hasIgdbClientSecret = HasPopulatedStringSetting(byKey, "igdb_client_secret");
+        }
+        else
+        {
+            var legacyExternal = ParseLegacyExternal(byKey.TryGetValue("external", out var externalJson)
+                ? externalJson
+                : null);
+            hasTmdbApiKey = !string.IsNullOrWhiteSpace(legacyExternal?.TmdbApiKey);
+            hasIgdbClientId = !string.IsNullOrWhiteSpace(legacyExternal?.IgdbClientId);
+            hasIgdbClientSecret = !string.IsNullOrWhiteSpace(legacyExternal?.IgdbClientSecret);
+        }
+
+        return new BadgesRelevantSettingsSnapshot(
+            BadgeInfo: badgeInfo,
+            BadgeWarn: badgeWarn,
+            BadgeError: badgeError,
+            HasTmdbApiKey: hasTmdbApiKey,
+            HasIgdbClientId: hasIgdbClientId,
+            HasIgdbClientSecret: hasIgdbClientSecret,
+            HasAdvancedMaintenanceEnabled: advancedMaintenance);
+    }
+
+    // --------------------
+    // NOTIFICATIONS (Discord / ntfy / webhook)
+    // --------------------
+    private const string NotificationsKey = "notifications";
+
+    public NotificationSettings GetNotifications()
+    {
+        var json = GetRaw(NotificationsKey);
+        if (string.IsNullOrWhiteSpace(json)) return new NotificationSettings();
+
+        try
+        {
+            var loaded = JsonSerializer.Deserialize<NotificationSettings>(json, JsonOpts) ?? new NotificationSettings();
+            loaded.DiscordWebhookUrl = UnprotectOptionalSecret(loaded.DiscordWebhookUrl);
+            loaded.NtfyTopicUrl = UnprotectOptionalSecret(loaded.NtfyTopicUrl);
+            loaded.NtfyToken = UnprotectOptionalSecret(loaded.NtfyToken);
+            loaded.WebhookUrl = UnprotectOptionalSecret(loaded.WebhookUrl);
+            return loaded;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Invalid notifications settings JSON, using defaults");
+            return new NotificationSettings();
+        }
+    }
+
+    public void SaveNotifications(NotificationSettings settings)
+    {
+        var stored = settings.Clone();
+        stored.DiscordWebhookUrl = ProtectOptionalSecret(settings.DiscordWebhookUrl);
+        stored.NtfyTopicUrl = ProtectOptionalSecret(settings.NtfyTopicUrl);
+        stored.NtfyToken = ProtectOptionalSecret(settings.NtfyToken);
+        stored.WebhookUrl = ProtectOptionalSecret(settings.WebhookUrl);
+        Upsert(NotificationsKey, JsonSerializer.Serialize(stored, JsonOpts));
+    }
+
+    // --------------------
+    // SEERR INTEGRATION
+    // --------------------
+    private const string SeerrKey = "seerr";
+
+    public SeerrSettings GetSeerr()
+    {
+        var json = GetRaw(SeerrKey);
+        if (string.IsNullOrWhiteSpace(json)) return new SeerrSettings();
+
+        try
+        {
+            var loaded = JsonSerializer.Deserialize<SeerrSettings>(json, JsonOpts) ?? new SeerrSettings();
+            loaded.MinSeeders = Math.Clamp(loaded.MinSeeders, 0, 10_000);
+            return loaded;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Invalid seerr settings JSON, using defaults");
+            return new SeerrSettings();
+        }
+    }
+
+    public void SaveSeerr(SeerrSettings settings)
+    {
+        settings.MinSeeders = Math.Clamp(settings.MinSeeders, 0, 10_000);
+        Upsert(SeerrKey, JsonSerializer.Serialize(settings, JsonOpts));
+    }
+
+    // --------------------
+    // DISK SPACE MONITORING
+    // --------------------
+    private const string DiskSpaceKey = "disk_space";
+
+    public DiskSpaceSettings GetDiskSpace()
+    {
+        var json = GetRaw(DiskSpaceKey);
+        if (string.IsNullOrWhiteSpace(json)) return new DiskSpaceSettings();
+
+        try
+        {
+            return NormalizeDiskSpace(JsonSerializer.Deserialize<DiskSpaceSettings>(json, JsonOpts) ?? new DiskSpaceSettings());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Invalid disk space settings JSON, using defaults");
+            return new DiskSpaceSettings();
+        }
+    }
+
+    public void SaveDiskSpace(DiskSpaceSettings settings)
+    {
+        Upsert(DiskSpaceKey, JsonSerializer.Serialize(NormalizeDiskSpace(settings), JsonOpts));
+    }
+
+    private static DiskSpaceSettings NormalizeDiskSpace(DiskSpaceSettings s)
+    {
+        s.WarnFreePercent = Math.Clamp(s.WarnFreePercent, 0, 90);
+        s.WarnFreeGb = Math.Clamp(s.WarnFreeGb, 0, 100_000);
+        s.ExtraPaths = (s.ExtraPaths ?? new List<string>())
+            .Select(p => (p ?? "").Trim())
+            .Where(p => p.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .Take(DiskSpaceSettings.MaxExtraPaths)
+            .ToList();
+        return s;
+    }
+
+        // --------------------
+    // APP LINKS (sidebar "Alkalmazások")
+    // --------------------
+    private const string AppLinksKey = "app_links";
+
+    public AppLinksSettings GetAppLinks()
+    {
+        var json = GetRaw(AppLinksKey);
+        if (string.IsNullOrWhiteSpace(json)) return new AppLinksSettings();
+
+        try
+        {
+            var loaded = JsonSerializer.Deserialize<AppLinksSettings>(json, JsonOpts) ?? new AppLinksSettings();
+            loaded.Links ??= new List<AppLink>();
+            return loaded;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Invalid app links settings JSON, using defaults");
+            return new AppLinksSettings();
+        }
+    }
+
+    public void SaveAppLinks(AppLinksSettings settings)
+    {
+        settings.Links ??= new List<AppLink>();
+        Upsert(AppLinksKey, JsonSerializer.Serialize(settings, JsonOpts));
+    }
+
+    private string? ProtectOptionalSecret(string? value)
+    {
+        var trimmed = value?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed)) return null;
+        return _keyProtection.IsProtected(trimmed) ? trimmed : _keyProtection.Protect(trimmed);
+    }
+
+    private string? UnprotectOptionalSecret(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        if (!_keyProtection.IsProtected(value)) return value;
+        return _keyProtection.TryUnprotect(value, out var plain) ? plain : null;
+    }
+
+    // --------------------
+    // Helpers DB
+    // --------------------
+    private string? GetRaw(string key)
+    {
+        using var conn = _db.Open();
+        return conn.ExecuteScalar<string?>(
+            "SELECT value_json FROM app_settings WHERE key = @k",
+            new { k = key }
+        );
+    }
+
+    private void Upsert(string key, string valueJson)
+    {
+        using var conn = _db.Open();
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+        conn.Execute(
+            """
+            INSERT INTO app_settings(key, value_json, updated_at_ts)
+            VALUES (@k, @v, @ts)
+            ON CONFLICT(key) DO UPDATE SET
+              value_json = excluded.value_json,
+              updated_at_ts = excluded.updated_at_ts;
+            """,
+            new { k = key, v = valueJson, ts = now }
+        );
+    }
+
+    private string? GetStringSetting(string key)
+    {
+        var raw = GetRaw(key);
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+
+        try
+        {
+            // value_json contient un JSON string (ex: "9473...")
+            return JsonSerializer.Deserialize<string>(raw, JsonOpts);
+        }
+        catch
+        {
+            // fallback brut
+            return raw.Trim().Trim('"');
+        }
+    }
+
+    private void UpsertStringSetting(string key, string value)
+    {
+        // stocke en JSON string
+        var json = JsonSerializer.Serialize(value ?? "", JsonOpts);
+        Upsert(key, json);
+    }
+
+    private string? GetExternalApiKeySetting(string key)
+    {
+        var value = GetStringSetting(key);
+        if (value is null)
+            return null;
+
+        if (string.IsNullOrWhiteSpace(value))
+            return value;
+
+        if (_keyProtection.IsProtected(value))
+            return _keyProtection.Unprotect(value);
+
+        try
+        {
+            var encrypted = _keyProtection.Protect(value);
+            UpsertStringSetting(key, encrypted);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to migrate plaintext external API key for setting {SettingKey}", key);
+        }
+
+        return value;
+    }
+
+    private void UpsertExternalApiKeySetting(string key, string? value)
+    {
+        var trimmed = (value ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(trimmed))
+        {
+            UpsertStringSetting(key, "");
+            return;
+        }
+
+        var encrypted = _keyProtection.Protect(trimmed);
+        UpsertStringSetting(key, encrypted);
+    }
+
+    private string? UnprotectExternalApiKey(string? value)
+    {
+        if (value is null)
+            return null;
+
+        if (string.IsNullOrWhiteSpace(value))
+            return value;
+
+        return _keyProtection.Unprotect(value);
+    }
+
+    private void TryMigrateLegacyExternalJson(ExternalSettings current)
+    {
+        try
+        {
+            foreach (var key in ExternalApiKeySettingKeys)
+            {
+                if (GetRaw(key) is not null)
+                    return;
+            }
+
+            UpsertExternalApiKeySetting("tmdb_api_key", current.TmdbApiKey);
+            UpsertExternalApiKeySetting("tvmaze_api_key", current.TvmazeApiKey);
+            UpsertExternalApiKeySetting("fanart_api_key", current.FanartApiKey);
+            UpsertExternalApiKeySetting("igdb_client_id", current.IgdbClientId);
+            UpsertExternalApiKeySetting("igdb_client_secret", current.IgdbClientSecret);
+            UpsertStringSetting("tmdb_enabled", current.TmdbEnabled == false ? "0" : "1");
+            UpsertStringSetting("tvmaze_enabled", current.TvmazeEnabled == false ? "0" : "1");
+            UpsertStringSetting("fanart_enabled", current.FanartEnabled == false ? "0" : "1");
+            UpsertStringSetting("igdb_enabled", current.IgdbEnabled == false ? "0" : "1");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to migrate legacy external settings");
+        }
+    }
+
+    private static bool? ParseBoolSetting(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        return raw.Trim() switch
+        {
+            "1" => true,
+            "0" => false,
+            _ => null
+        };
+    }
+
+    private static bool HasPopulatedStringSetting(IReadOnlyDictionary<string, string?> byKey, string key)
+    {
+        if (!byKey.TryGetValue(key, out var raw))
+            return false;
+
+        var value = ParseStoredString(raw);
+        return !string.IsNullOrWhiteSpace(value);
+    }
+
+    private static string? ParseStoredString(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<string>(raw, JsonOpts);
+        }
+        catch
+        {
+            return raw.Trim().Trim('"');
+        }
+    }
+
+    private static ExternalSettings? ParseLegacyExternal(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<ExternalSettings>(raw, JsonOpts);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private GeneralSettings ApplyArrSettings(GeneralSettings general, ArrSettings arr)
+    {
+        general.ArrSyncIntervalMinutes = arr.ArrSyncIntervalMinutes;
+        general.ArrAutoSyncEnabled = arr.ArrAutoSyncEnabled;
+        general.RequestIntegrationMode = arr.RequestIntegrationMode;
+        return general;
+    }
+
+    private ArrSettings ProjectArrSettingsFromGeneral(ArrSettings defaults)
+    {
+        var general = GetRaw("general");
+        if (string.IsNullOrWhiteSpace(general))
+            return defaults;
+
+        try
+        {
+            var loaded = JsonSerializer.Deserialize<GeneralSettings>(general, JsonOpts);
+            if (loaded is null)
+                return defaults;
+
+            if (general.Contains("arrSyncIntervalMinutes", StringComparison.OrdinalIgnoreCase) &&
+                loaded.ArrSyncIntervalMinutes > 0)
+            {
+                defaults.ArrSyncIntervalMinutes = loaded.ArrSyncIntervalMinutes;
+            }
+
+            if (general.Contains("arrAutoSyncEnabled", StringComparison.OrdinalIgnoreCase))
+                defaults.ArrAutoSyncEnabled = loaded.ArrAutoSyncEnabled;
+
+            if (general.Contains("requestIntegrationMode", StringComparison.OrdinalIgnoreCase))
+            {
+                var mode = (loaded.RequestIntegrationMode ?? "arr").Trim().ToLowerInvariant();
+                defaults.RequestIntegrationMode = mode is "overseerr" or "jellyseerr" or "seer" ? mode : "arr";
+            }
+
+            return defaults;
+        }
+        catch
+        {
+            return defaults;
+        }
+    }
+
+    private static ArrSettings ProjectArrSettings(GeneralSettings settings)
+    {
+        return new ArrSettings
+        {
+            ArrSyncIntervalMinutes = settings.ArrSyncIntervalMinutes,
+            ArrAutoSyncEnabled = settings.ArrAutoSyncEnabled,
+            RequestIntegrationMode = settings.RequestIntegrationMode,
+        };
+    }
+
+    private sealed class PassthroughApiKeyProtectionService : IApiKeyProtectionService
+    {
+        public string Protect(string plainText) => plainText;
+        public string Unprotect(string protectedText) => protectedText;
+        public bool TryUnprotect(string protectedText, out string? plainText)
+        {
+            plainText = protectedText;
+            return true;
+        }
+        public bool IsProtected(string value) => false;
+    }
+
+    private sealed class SettingsKeyValueRow
+    {
+        public string? Key { get; init; }
+        public string? ValueJson { get; init; }
+    }
+}
