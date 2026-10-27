@@ -6,7 +6,10 @@ import ErrorBoundary from "./ui/ErrorBoundary.jsx";
 import { applyUiLanguage, getStoredUiLanguage } from "./app/locale.js";
 import { initRuntimeTranslation } from "./app/runtimeTranslation.js";
 import "./styles/tokens.css";
+import "@fontsource-variable/figtree";
+import "@fontsource-variable/bricolage-grotesque";
 import "./styles/styles.css";
+import "./styles/poisonarr.css";
 
 applyUiLanguage(getStoredUiLanguage());
 initRuntimeTranslation();

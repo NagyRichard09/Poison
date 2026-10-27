@@ -7,7 +7,7 @@ function syncThemeColor(theme) {
   if (typeof document === "undefined") return;
   const metaTheme = document.querySelector('meta[name="theme-color"]');
   if (!metaTheme) return;
-  metaTheme.setAttribute("content", theme === "dark" ? "#2a2a2a" : "#2493b5");
+  metaTheme.setAttribute("content", theme === "dark" ? "#160b27" : "#1c0f30");
 }
 
 function normalizeTheme(theme) {

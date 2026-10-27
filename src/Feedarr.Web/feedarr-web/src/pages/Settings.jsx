@@ -15,6 +15,7 @@ const SettingsSecurityPage = React.lazy(() => import("./settings/SettingsSecurit
 const SettingsArrPage = React.lazy(() => import("./settings/SettingsArrPage.jsx"));
 const SettingsStoragePage = React.lazy(() => import("./settings/SettingsStoragePage.jsx"));
 const SettingsAppHubPage = React.lazy(() => import("./settings/SettingsAppHubPage.jsx"));
+const StackSetupWizard = React.lazy(() => import("./stack/StackSetupWizard.jsx"));
 
 export default function Settings() {
   const location = useLocation();
@@ -38,6 +39,14 @@ export default function Settings() {
     return (
       <Suspense fallback={<Loader label="Chargement des paramètres…" />}>
         <SettingsArrPage />
+      </Suspense>
+    );
+  }
+
+  if (section === "setup") {
+    return (
+      <Suspense fallback={<Loader label="Chargement des paramètres…" />}>
+        <StackSetupWizard mode="settings" />
       </Suspense>
     );
   }

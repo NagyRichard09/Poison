@@ -214,6 +214,13 @@ export default function Sidebar({ onNavigate }) {
               Sauvegarde
             </NavLink>
             <NavLink
+              to="/settings/setup"
+              className={() => "snav__subitem" + (path === "/settings/setup" ? " is-active" : "")}
+              onClick={onNavigate}
+            >
+              Configuration des applications
+            </NavLink>
+            <NavLink
               to="/settings/hub"
               className={() => "snav__subitem" + (path === "/settings/hub" ? " is-active" : "")}
               onClick={onNavigate}

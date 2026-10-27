@@ -4,22 +4,22 @@ import ToggleSwitch from "../../ui/ToggleSwitch.jsx";
 import { NO_RUNTIME_TRANSLATE, useL } from "../../app/i18n.js";
 
 const card = {
-  background: "var(--bg2)", border: "1px solid var(--border)",
+  background: "var(--panel)", border: "1px solid var(--panel-border)",
   borderRadius: 10, padding: "1rem 1.25rem", marginBottom: "1rem",
-  fontSize: 13, color: "var(--text2)",
+  fontSize: 13, color: "var(--muted)",
 };
 const rowStyle = { display: "flex", alignItems: "center", gap: 12, padding: "6px 0" };
 const labelStyle = { flex: 1, minWidth: 0 };
 const hintStyle = { fontSize: 11, color: "var(--muted)", marginTop: 2 };
 const inputStyle = {
   width: "100%", boxSizing: "border-box", fontSize: 13, padding: "6px 8px", borderRadius: 6,
-  border: "1px solid var(--border)", background: "var(--bg3, var(--bg))", color: "var(--text)",
+  border: "1px solid var(--panel-border)", background: "var(--input-bg)", color: "var(--text)",
 };
 const buttonStyle = {
-  fontSize: 12, padding: "5px 12px", borderRadius: 6, border: "1px solid var(--border)",
-  background: "var(--bg3, var(--bg2))", color: "var(--text)", cursor: "pointer",
+  fontSize: 12, padding: "5px 12px", borderRadius: 6, border: "1px solid var(--panel-border)",
+  background: "var(--panel-soft)", color: "var(--text)", cursor: "pointer",
 };
-const primaryButton = { ...buttonStyle, background: "#0F6E56", color: "#fff", border: "none" };
+const primaryButton = { ...buttonStyle, background: "var(--accent-fill)", color: "var(--on-accent)", border: "none", fontWeight: 700 };
 
 function ToggleRow({ label, hint, checked, onChange }) {
   return (
@@ -45,12 +45,12 @@ function SecretField({ label, hint, placeholder, configured, display, value, onC
       <div style={{ color: "var(--text)", marginBottom: 4 }}>
         {label}
         {configured && value == null && (
-          <span style={{ marginLeft: 8, fontSize: 11, color: "#0F6E56" }}>
+          <span style={{ marginLeft: 8, fontSize: 11, color: "#2bd96b" }}>
             ✓ {L("beállítva", "set", "défini")}{display ? ` (${display})` : ""}
           </span>
         )}
         {cleared && configured && (
-          <span style={{ marginLeft: 8, fontSize: 11, color: "#A32D2D" }}>{L("mentéskor törlődik", "cleared on save", "effacé à l'enregistrement")}</span>
+          <span style={{ marginLeft: 8, fontSize: 11, color: "#e5484d" }}>{L("mentéskor törlődik", "cleared on save", "effacé à l'enregistrement")}</span>
         )}
       </div>
       <div style={{ display: "flex", gap: 6 }}>
@@ -237,7 +237,7 @@ export default function SeerrSettingsPanel({ onSaved }) {
           {busy === "test" ? L("Küldés…", "Sending…", "Envoi…") : L("Teszt értesítés", "Test notification", "Notification de test")}
         </button>
         {msg && (
-          <span style={{ fontSize: 12, color: msg.error ? "#A32D2D" : "#0F6E56" }}>{msg.text}</span>
+          <span style={{ fontSize: 12, color: msg.error ? "#e5484d" : "#2bd96b" }}>{msg.text}</span>
         )}
       </div>
     </div>

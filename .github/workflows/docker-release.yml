@@ -61,7 +61,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/feedarr
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/poisonarr
           tags: |
             type=raw,value=latest
             type=ref,event=tag

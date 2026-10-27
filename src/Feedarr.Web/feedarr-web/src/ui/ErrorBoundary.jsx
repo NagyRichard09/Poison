@@ -1,4 +1,6 @@
 import React from "react";
+import { pick } from "../app/i18n.js";
+import { translateUiText } from "../app/runtimeTranslation.js";
 
 /**
  * Component-level error boundary.
@@ -33,7 +35,13 @@ export default class ErrorBoundary extends React.Component {
 
       return (
         <div className="errorbox" style={{ margin: "12px 0" }}>
-          <div className="errorbox__title">{label} n'a pas pu etre affiche</div>
+          <div className="errorbox__title" data-no-ui-translate="1">
+            {pick(
+              `Nem sikerült megjeleníteni: ${translateUiText(label)}`,
+              `${translateUiText(label)} could not be displayed`,
+              `${label} n'a pas pu être affiché`
+            )}
+          </div>
           <div className="muted" style={{ marginTop: 4 }}>
             {this.state.error?.message || "Erreur inattendue"}
           </div>

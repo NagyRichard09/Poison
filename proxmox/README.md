@@ -139,5 +139,6 @@ chown -R 101000:101000 /tank/media
 
 ## Licenc
 
-A Poisonarr GPL-3.0 licencű (lásd `LICENSE`). A többi alkalmazás a saját hivatalos
+A Poisonarr-t NagyRichard09 készíti, GPL-3.0 licenccel (lásd `LICENSE`); a
+[Feedarr](https://github.com/Guizmos/Feedarr) forráskódjára épül. A többi alkalmazás a saját hivatalos
 forrásából, a saját licence alatt települ; a telepítő nem módosítja őket.

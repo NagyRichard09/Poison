@@ -1,9 +1,15 @@
-# Changelog
+# Changelog – Poisonarr
+
+A Poisonarr-t NagyRichard09 készíti. A 2.5.5 és korábbi bejegyzések az eredeti
+[Feedarr](https://github.com/Guizmos/Feedarr) projekt (Guizmos) történetéből valók, amelyre a Poisonarr épül.
 
 ## [2.6.0] (2026-10-24)
 
 ### Features
 
+* **design:** a teljes felület újratervezve a logó színeivel (fiolaéj, üveglila, méregzöld, dugólila), világos és sötét témában; új betűk (Bricolage Grotesque, Figtree – a programba csomagolva); világító „folyadékszint” a fejlécen és az aktív menüponton
+* **settings:** Beállítások → Alkalmazások beállítása: kiválasztható, melyik alkalmazást (Plex, Radarr, Sonarr, Prowlarr, Seerr, qBittorrent, Tautulli) állítod be vagy újra
+* **i18n:** méretek magyarul/angolul GB/TB egységgel, további hiányzó fordítások (részletek ablak, hibaüzenetek)
 * **plex:** a Plex Media Server is települ (hivatalos `repo.plex.tv` tároló), a varázsló vele kezd: claim kóddal a Plex fiókhoz rendelés, szervernév, „Filmek” és „Sorozatok” könyvtár magyar metaadatokkal; oldalsáv menüpont, `poisonarr update plex`
 * **branding:** új, méreg témájú Poisonarr logó és ikonok (böngészőfül, telefonos ikon, fejléc)
 * **branding:** a program új neve **Poisonarr** (felület, böngésző fül, értesítések, telepítő, `poisonarr` parancs). A belső nevek (szolgáltatás, mappák, kulcsok) változatlanok, így a meglévő telepítés és adatok megmaradnak.

@@ -72,8 +72,9 @@ export default function Topbar({ onToggleNav }) {
           <img
             className="brand-logo"
             src={logoSrc}
-            alt="Poisonarr"
+            alt=""
           />
+          <span className="brand-name" data-no-ui-translate="1">Poisonarr</span>
         </div>
       </div>
 

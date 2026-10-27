@@ -213,7 +213,7 @@ public sealed class ExternalProviderTestService
         var client = _httpClientFactory.CreateClient();
         client.Timeout = TimeSpan.FromSeconds(20);
         if (client.DefaultRequestHeaders.UserAgent.Count == 0)
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0 ( https://github.com/Guizmos/feedarr )");
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0 ( https://github.com/NagyRichard09/Poison )");
 
         var baseUri = BuildBaseUri(baseUrl, "https://musicbrainz.org/ws/2/");
         var query = Uri.EscapeDataString("release:\"Abbey Road\" AND artist:\"The Beatles\"");

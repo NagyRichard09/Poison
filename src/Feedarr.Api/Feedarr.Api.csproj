@@ -9,6 +9,13 @@
     <FileVersion>2.6.0.0</FileVersion>
     <InformationalVersion>2.6.0</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <Product>Poisonarr</Product>
+    <Authors>NagyRichard09</Authors>
+    <Company>NagyRichard09</Company>
+    <Description>Poisonarr – torrent feed dashboard and Plex / *arr stack hub</Description>
+    <Copyright>Poisonarr © NagyRichard09; based on Feedarr © Guizmos (GPL-3.0)</Copyright>
+    <RepositoryUrl>https://github.com/NagyRichard09/Poison</RepositoryUrl>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>

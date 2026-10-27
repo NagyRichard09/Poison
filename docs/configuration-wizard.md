@@ -1,13 +1,13 @@
-# Feedarr Configuration Guide (Setup Wizard)
+# Poisonarr Configuration Guide (Setup Wizard)
 
 [Français](configuration-wizard.fr.md) | English
 
-⚠️ Feedarr v2 Notice
+⚠️ Poisonarr Notice
 
-This guide applies to Feedarr v2 (monolithic architecture).
+This guide applies to Poisonarr (single-service architecture). On a Proxmox install the stack wizard (`/stack-setup`) runs first and then continues with this wizard.
 Version 1 (split API + Web containers) is deprecated.
 
-Feedarr now runs as a single service and enforces a First Boot Setup Lock.
+Poisonarr now runs as a single service and enforces a First Boot Setup Lock.
 
 ## Prerequisites
 
@@ -88,7 +88,7 @@ What it impacts:
 2. Open API settings:
    - `https://www.themoviedb.org/settings/api`
 3. Request API access and copy the API key (v3).
-4. Paste into Feedarr `TMDB -> API Key`.
+4. Paste into Poisonarr `TMDB -> API Key`.
 
 Docs:
 - `https://developer.themoviedb.org/docs/getting-started`
@@ -98,7 +98,7 @@ Docs:
 1. Create/login to a Fanart account.
 2. Request a personal API key:
    - `https://fanart.tv/get-an-api-key/`
-3. Copy key and paste into Feedarr `Fanart -> API Key`.
+3. Copy key and paste into Poisonarr `Fanart -> API Key`.
 
 #### IGDB (via Twitch Developer Console)
 
@@ -107,14 +107,14 @@ Docs:
    - `https://dev.twitch.tv/console/apps`
 3. Register an app.
 4. Copy `Client ID` and generate/copy `Client Secret`.
-5. Paste both into Feedarr `IGDB -> Client ID / Client Secret`.
+5. Paste both into Poisonarr `IGDB -> Client ID / Client Secret`.
 
 Docs:
 - `https://api-docs.igdb.com/#getting-started`
 
 #### TVmaze
 
-TVmaze key is optional in Feedarr.
+TVmaze key is optional in Poisonarr.
 
 1. API reference:
    - `https://www.tvmaze.com/api`
@@ -136,7 +136,7 @@ What to do:
 4. If valid, click `Save`.
 
 What it impacts:
-- Persists provider config in Feedarr (`/api/setup/indexer-providers/{type}`).
+- Persists provider config in Poisonarr (`/api/setup/indexer-providers/{type}`).
 - Enables indexer discovery in next step.
 
 ### Retrieve API Key - Jackett / Prowlarr
@@ -145,14 +145,14 @@ What it impacts:
 
 1. Open Jackett web UI.
 2. Copy API key from dashboard/home.
-3. Paste in Feedarr step 3.
+3. Paste in Poisonarr step 3.
 
 #### Prowlarr
 
 1. Open Prowlarr web UI.
 2. Go to `Settings -> General -> Security`.
 3. Copy API key.
-4. Paste in Feedarr step 3.
+4. Paste in Poisonarr step 3.
 
 ## Step 4 - Indexers
 
@@ -166,13 +166,13 @@ Category selector:
 
 What to do:
 1. Select an indexer from available list.
-2. Feedarr loads CAPS categories.
+2. Poisonarr loads CAPS categories.
 3. Keep recommended categories or switch to full list.
 4. Add the indexer.
 5. Repeat as needed.
 
 What it impacts:
-- Creates Feedarr sources (`/api/sources`).
+- Creates Poisonarr sources (`/api/sources`).
 - Categories affect filtering, parsing and sync behavior.
 - You need at least one source to continue.
 
@@ -216,7 +216,7 @@ Screenshot:
 
 What to do:
 1. Review providers, indexer provider, sources and apps.
-2. Click `Launch Feedarr`.
+2. Click `Launch Poisonarr`.
 
 What it impacts:
 - Marks onboarding as complete (`/api/system/onboarding/complete`).

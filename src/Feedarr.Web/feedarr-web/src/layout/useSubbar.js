@@ -13,3 +13,9 @@ export function useSubbarSetter() {
   if (setContent === undefined) throw new Error("useSubbarSetter must be used inside SubbarProvider");
   return setContent;
 }
+
+/** Like useSubbarSetter, but returns null outside a SubbarProvider (e.g. the setup shell). */
+export function useOptionalSubbarSetter() {
+  const setContent = useContext(SubbarSetterContext);
+  return setContent === undefined ? null : setContent;
+}

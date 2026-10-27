@@ -1,8 +1,8 @@
-# Guide de Configuration Feedarr (Setup Wizard)
+# Guide de Configuration Poisonarr (Setup Wizard)
 
 Français | [English](configuration-wizard.md)
 
-Ce guide décrit les 6 étapes du wizard Feedarr et explique:
+Ce guide décrit les 6 étapes du wizard Poisonarr et explique:
 - quoi faire à chaque étape,
 - ce que chaque étape modifie dans l’application,
 - comment créer ou récupérer les clés API pour chaque provider.
@@ -52,7 +52,7 @@ Impact:
 2. Ouvrir les paramètres API:
    - `https://www.themoviedb.org/settings/api`
 3. Demander l’accès API puis récupérer la clé API v3.
-4. Coller dans Feedarr `TMDB -> Clé API`.
+4. Coller dans Poisonarr `TMDB -> Clé API`.
 
 Doc:
 - `https://developer.themoviedb.org/docs/getting-started`
@@ -62,7 +62,7 @@ Doc:
 1. Créer/se connecter à un compte Fanart.
 2. Générer une clé API sur:
    - `https://fanart.tv/get-an-api-key/`
-3. Coller la clé dans Feedarr `Fanart -> Clé API`.
+3. Coller la clé dans Poisonarr `Fanart -> Clé API`.
 
 #### IGDB (via Twitch Developer Console)
 
@@ -71,14 +71,14 @@ Doc:
    - `https://dev.twitch.tv/console/apps`
 3. Créer une application.
 4. Récupérer `Client ID` et générer/récupérer `Client Secret`.
-5. Coller dans Feedarr `IGDB -> Client ID / Client Secret`.
+5. Coller dans Poisonarr `IGDB -> Client ID / Client Secret`.
 
 Docs:
 - `https://api-docs.igdb.com/#getting-started`
 
 #### TVmaze
 
-La clé TVmaze est optionnelle dans Feedarr.
+La clé TVmaze est optionnelle dans Poisonarr.
 
 1. Référence API:
    - `https://www.tvmaze.com/api`
@@ -100,7 +100,7 @@ Capture:
 4. Si test valide, cliquer `Sauvegarder`.
 
 Impact:
-- Persistance côté API Feedarr (`/api/setup/indexer-providers/{type}`).
+- Persistance côté API Poisonarr (`/api/setup/indexer-providers/{type}`).
 - Le provider sert à lister les indexeurs dans l’étape suivante.
 
 ### Récupération API key - Jackett / Prowlarr
@@ -109,14 +109,14 @@ Impact:
 
 1. Ouvrir l’interface web Jackett.
 2. Copier l’API key affichée sur le dashboard/home.
-3. Coller dans Feedarr (étape 3).
+3. Coller dans Poisonarr (étape 3).
 
 #### Prowlarr
 
 1. Ouvrir l’interface web Prowlarr.
 2. Aller dans `Settings -> General -> Security`.
 3. Copier l’API key.
-4. Coller dans Feedarr (étape 3).
+4. Coller dans Poisonarr (étape 3).
 
 ## Étape 4 - Indexeurs
 
@@ -130,13 +130,13 @@ Sélecteur de catégories:
 
 À faire:
 1. Sélectionner un indexeur disponible (par fournisseur).
-2. Laisser Feedarr charger les catégories (CAPS).
+2. Laisser Poisonarr charger les catégories (CAPS).
 3. Garder les catégories recommandées, ou basculer sur liste complète.
 4. Ajouter l’indexeur.
 5. Répéter pour d’autres indexeurs.
 
 Impact:
-- Création des sources Feedarr (`/api/sources`).
+- Création des sources Poisonarr (`/api/sources`).
 - Les catégories pilotent filtrage, parsing et sync.
 - Au moins un indexeur ajouté est nécessaire pour continuer.
 
@@ -154,7 +154,7 @@ Capture:
 5. Optionnel: configurer les options avancées (root folder, quality profile, tags, etc.).
 
 Impact:
-- Sauvegarde de l’intégration ARR dans Feedarr (`/api/apps`).
+- Sauvegarde de l’intégration ARR dans Poisonarr (`/api/apps`).
 - Active les workflows de statut et de synchronisation avec Sonarr/Radarr.
 - Cette étape peut être ignorée (`Passer`).
 
@@ -180,7 +180,7 @@ Capture:
 
 À faire:
 1. Vérifier l’état providers/fournisseurs/sources/applications.
-2. Cliquer `Lancer Feedarr`.
+2. Cliquer `Lancer Poisonarr`.
 
 Impact:
 - Marque l’onboarding comme terminé (`/api/system/onboarding/complete`).

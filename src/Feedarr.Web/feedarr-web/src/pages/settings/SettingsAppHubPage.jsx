@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { apiGet, apiPost, apiPut } from "../../api/client.js";
 import { useSubbarSetter } from "../../layout/useSubbar.js";
 import SubAction from "../../ui/SubAction.jsx";
@@ -209,8 +210,11 @@ export default function SettingsAppHubPage() {
       <div className="pagehead">
         <div>
           <h1>{L("Alkalmazás-központ", "App hub", "Centre d'applications")}</h1>
-          <div className="muted">{L("Seerr, Prowlarr, Sonarr, Radarr, Tautulli, qBittorrent egy helyen", "Seerr, Prowlarr, Sonarr, Radarr, Tautulli and qBittorrent in one place", "Seerr, Prowlarr, Sonarr, Radarr, Tautulli et qBittorrent au même endroit")}</div>
+          <div className="muted">{L("Plex, Seerr, Prowlarr, Sonarr, Radarr, Tautulli, qBittorrent egy helyen", "Plex, Seerr, Prowlarr, Sonarr, Radarr, Tautulli and qBittorrent in one place", "Plex, Seerr, Prowlarr, Sonarr, Radarr, Tautulli et qBittorrent au même endroit")}</div>
         </div>
+        <Link className="btn btn-accent apphub-setup-link" to="/settings/setup">
+          {L("Alkalmazások beállítása", "App setup", "Configurer les applications")}
+        </Link>
       </div>
       <div className="pagehead__divider" />
 

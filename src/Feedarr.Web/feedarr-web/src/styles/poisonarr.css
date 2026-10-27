@@ -1,0 +1,348 @@
+/* =============================================================================
+   Poisonarr design layer
+   Colours come from the logo (tokens in styles.css :root):
+     vial night  #120921 · glass violet #1d1033 · toxin green #6cf04a
+     cork violet #a77bff · glass lavender #efe6ff
+   One signature element: the glowing "liquid level" line under the top bar and
+   on the active navigation item. Everything else stays quiet.
+   ============================================================================= */
+
+/* ---------- semantic colours (used by pages with inline styles) ---------- */
+:root {
+  --danger: #e5484d;
+  --danger-bg: color-mix(in srgb, #e5484d 12%, transparent);
+  --success: var(--toxin-strong);
+  --success-bg: color-mix(in srgb, var(--toxin-strong) 14%, transparent);
+  --ok: var(--toxin-strong);
+  --warning: #e0a42e;
+  --color-danger: var(--danger);
+  --color-warn: var(--warning);
+}
+
+/* ---------- type ---------- */
+html { -webkit-text-size-adjust: 100%; }
+body {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.45;
+  font-feature-settings: "ss01", "cv01";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+button, input, select, textarea { font-family: inherit; }
+
+h1, h2, h3,
+.pagehead h1,
+.settings-card__title,
+.modal-title,
+.card-title,
+.stack-setup h2 {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+.pagehead h1 { font-size: 24px; font-weight: 700; line-height: 1.15; }
+.settings-card__title { font-size: 16px; font-weight: 650; }
+
+::selection { background: color-mix(in srgb, var(--toxin) 45%, transparent); color: var(--text); }
+
+a { color: var(--accent-2); }
+a:hover { color: color-mix(in srgb, var(--accent-2) 80%, var(--text)); }
+
+/* ---------- focus ---------- */
+:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; }
+
+/* ---------- top bar + the liquid line ---------- */
+.topbar {
+  background:
+    radial-gradient(120% 220% at 0% 0%, color-mix(in srgb, var(--cork) 22%, transparent) 0%, transparent 45%),
+    var(--topbar);
+  color: var(--topbar-text);
+  box-shadow: none;
+  border-bottom: 0;
+}
+.topbar::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -2px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--toxin) 0%, var(--toxin-strong) 55%, var(--cork) 100%);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--toxin) 70%, transparent), 0 0 2px var(--toxin);
+  pointer-events: none;
+}
+.brand { gap: 10px; }
+.brand-logo { height: 38px; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--toxin) 35%, transparent)); }
+.brand-name {
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--glass);
+  line-height: 1;
+}
+@media (max-width: 760px) { .brand-name { display: none; } }
+
+.topbar-search {
+  border-bottom: 1px solid color-mix(in srgb, var(--glass) 35%, transparent);
+  transition: border-color .15s ease;
+}
+.topbar-search:focus-within { border-bottom-color: var(--toxin); }
+.topbar-search__icon,
+.topbar-search__label,
+.topbar-search input { color: var(--glass); }
+.topbar-search input::placeholder { color: color-mix(in srgb, var(--glass) 60%, transparent); }
+.topbar-burger, .topbar .iconbtn { color: var(--glass); }
+.topbar .iconbtn { background: color-mix(in srgb, var(--glass) 10%, transparent); border-color: color-mix(in srgb, var(--glass) 18%, transparent); }
+.topbar .iconbtn:hover { background: color-mix(in srgb, var(--glass) 18%, transparent); }
+.modal-head .iconbtn {
+  color: var(--text);
+  background: var(--panel-soft);
+  border: 1px solid var(--panel-border);
+}
+.modal-head .iconbtn:hover { border-color: var(--accent-2); color: var(--accent-2); }
+
+/* ---------- sidebar ---------- */
+.sidebar {
+  background: var(--sidebar);
+  border-right: 1px solid color-mix(in srgb, var(--cork) 14%, transparent);
+}
+.snav__item,
+.snav__subitem { color: var(--sidebar-text); border-radius: 8px; }
+.snav__item:hover,
+.snav__subitem:hover { color: var(--toxin); background: color-mix(in srgb, var(--glass) 6%, transparent); }
+.snav__item.is-active,
+.snav__subitem.is-active { background: var(--sidebar-active); color: #fff; }
+.snav__item.is-active .snav__icon { color: var(--toxin); }
+.snav__item.is-active::before,
+.snav__subitem.is-active::before {
+  background: var(--toxin);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--toxin) 75%, transparent);
+}
+.snav__label { font-weight: 500; }
+.snav-apps__head { text-transform: none; letter-spacing: 0; color: var(--sidebar-muted); font-weight: 600; }
+
+/* ---------- toolbar (sub bar) ---------- */
+.subbar {
+  background: var(--subbar);
+  color: var(--subbar-text);
+  border-bottom: 1px solid color-mix(in srgb, var(--cork) 16%, transparent);
+}
+.subaction { color: color-mix(in srgb, var(--glass) 82%, transparent); border-radius: 8px; }
+.subaction:hover:not(:disabled),
+.subaction.is-active { color: var(--toxin); background: color-mix(in srgb, var(--glass) 6%, transparent); }
+.subbar .subaction + .subaction::before,
+.subbar .subaction + .subaction-group::before,
+.subbar .subaction-group + .subaction::before,
+.subbar .subdivider { background: color-mix(in srgb, var(--glass) 16%, transparent); }
+.subaction.is-success { color: var(--toxin); }
+.subsearch, .subselect {
+  background: color-mix(in srgb, var(--glass) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--glass) 18%, transparent);
+  color: var(--glass);
+}
+.subsearch input { color: var(--glass); }
+.subselect option { color: var(--text); background: var(--panel); }
+
+/* ---------- surfaces ---------- */
+.pagehead__divider { background: var(--panel-border); }
+.card,
+.settings-card,
+.indexer-card,
+.setup-card,
+.activityCard,
+.modal,
+.modal-box,
+.errorbox {
+  border-radius: var(--radius);
+}
+.settings-card,
+.setup-card,
+.card {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--panel-shadow);
+}
+.indexer-card { background: var(--panel-raised); border: 1px solid var(--panel-border); }
+.settings-help, .muted { color: var(--muted); }
+
+/* ---------- buttons ---------- */
+.btn {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--input-border);
+  background: var(--panel-raised);
+  color: var(--text);
+  font-weight: 600;
+  transition: border-color .15s ease, background .15s ease, color .15s ease;
+}
+.btn:hover:not(:disabled) { background: var(--panel-soft); border-color: var(--accent-2); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.btn-accent,
+.btn--primary,
+.btn.btn-accent {
+  background: var(--accent-fill);
+  border-color: transparent;
+  color: var(--on-accent);
+  font-weight: 700;
+}
+.btn-accent:hover:not(:disabled),
+.btn--primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-fill) 85%, #fff);
+  border-color: transparent;
+  color: var(--on-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--toxin) 22%, transparent);
+}
+
+/* ---------- inputs ---------- */
+:where(input[type="text"], input[type="password"], input[type="number"], input[type="email"],
+input[type="url"], input[type="search"], input:not([type]), select, textarea) {
+  background: var(--input-bg);
+  color: var(--text);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  min-height: 36px;
+}
+:root[data-theme="dark"] input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]),
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea { background: var(--input-bg); border-color: var(--input-border); }
+input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:focus,
+input:not([type]):focus, select:focus, textarea:focus {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 3px var(--focus);
+  outline: none;
+}
+input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color: var(--toxin-strong); }
+.topbar-search input,
+.topbar-search input:focus,
+.subsearch input,
+.subsearch input:focus { border: 0; box-shadow: none; background: transparent; }
+
+/* ---------- toggle ---------- */
+.settings-toggle-native { background: color-mix(in srgb, var(--text) 22%, transparent); border-color: transparent; }
+.settings-toggle-native.is-on {
+  background: var(--toxin-strong);
+  border-color: transparent;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--toxin) 40%, transparent);
+}
+.settings-toggle-native__thumb { background: #fff; }
+
+/* ---------- tabs / steppers ---------- */
+.settings-tabs button {
+  background: var(--panel-soft);
+  border-color: var(--panel-border);
+  color: var(--text);
+}
+.settings-tabs button.tab-active { background: var(--panel); color: var(--text); box-shadow: inset 0 -2px 0 var(--toxin-strong); }
+
+.setup-stepper-item { background: var(--panel); border-color: var(--panel-border); border-radius: 10px; }
+.setup-stepper-item.is-active { border-color: var(--toxin-strong); box-shadow: 0 0 0 3px color-mix(in srgb, var(--toxin) 18%, transparent); }
+.setup-stepper-num { background: var(--panel-soft); color: var(--text); }
+.setup-stepper-item.is-done .setup-stepper-num { background: var(--toxin-strong); color: var(--on-accent); }
+
+/* ---------- modals ---------- */
+.modal-head { border-bottom: 1px solid var(--panel-border); }
+:root[data-theme="dark"] .modal-head { background: var(--panel-soft); }
+
+/* ---------- posters ---------- */
+.posterCard:hover .poster { box-shadow: var(--poster-shadow-hover), 0 0 0 2px color-mix(in srgb, var(--toxin) 45%, transparent); }
+
+/* ---------- scrollbars ---------- */
+* { scrollbar-color: color-mix(in srgb, var(--cork) 45%, transparent) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--cork) 40%, transparent);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- stack setup + storage widget ---------- */
+.stack-pill.is-ok, .stack-results .is-ok span { color: var(--accent); }
+.stack-appchip.is-ok { border-color: color-mix(in srgb, var(--toxin-strong) 60%, transparent); }
+.stack-dot.is-ok { background: var(--toxin-strong); box-shadow: 0 0 6px var(--toxin); }
+.stack-embed { border-color: var(--panel-border); }
+.diskspace-widget { background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+
+/* ---------- Settings → App setup: app picker ---------- */
+.stack-setup--settings { max-width: 1200px; }
+.stack-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.stack-picker__item {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  row-gap: 2px;
+  align-items: center;
+  text-align: left;
+  padding: 12px 14px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color .15s ease, background .15s ease;
+}
+.stack-picker__item:hover { border-color: color-mix(in srgb, var(--accent-2) 60%, transparent); }
+.stack-picker__icon { grid-row: 1 / span 2; width: 26px; height: 26px; color: var(--accent-2); }
+.stack-picker__name { font-family: var(--font-display); font-weight: 650; font-size: 15px; }
+.stack-picker__state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.stack-picker__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: 0 0 auto; }
+.stack-picker__item.is-ok .stack-picker__dot { background: var(--toxin-strong); box-shadow: 0 0 6px var(--toxin); }
+.stack-picker__item.is-todo .stack-picker__dot { background: var(--warning); }
+.stack-picker__item.is-bad .stack-picker__dot { background: var(--danger); }
+.stack-picker__item.is-off { opacity: .6; }
+.stack-picker__item.is-active {
+  border-color: var(--toxin-strong);
+  background: color-mix(in srgb, var(--toxin) 7%, var(--panel));
+}
+.stack-picker__item.is-active .stack-picker__icon { color: var(--accent); }
+.stack-picker__item.is-active::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--toxin), var(--toxin-strong));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--toxin) 70%, transparent);
+}
+.stack-setup__panel { min-height: 0; }
+.stack-creds {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px dashed color-mix(in srgb, var(--accent-2) 45%, transparent);
+  background: color-mix(in srgb, var(--accent-2) 6%, transparent);
+}
+.stack-creds__text { display: flex; flex-direction: column; gap: 2px; }
+@media (max-width: 640px) {
+  .stack-picker {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: 150px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+}
+.stack-picker__state { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.stack-picker__name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.stack-note { background: var(--panel-soft); border-color: var(--panel-border); }
+.apphub-setup-link { display: inline-flex; align-items: center; text-decoration: none; white-space: nowrap; }

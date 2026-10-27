@@ -17,25 +17,25 @@ const TYPE_LABELS = {
 // Plain hex colors: an alpha suffix is appended (color + "22"), which would be
 // invalid CSS with a var(...) value.
 const TYPE_COLORS = {
-  MEDIA_PENDING: "#8A6D1F",
-  MEDIA_APPROVED: "#0F6E56",
-  MEDIA_AUTO_APPROVED: "#0F6E56",
-  MEDIA_AVAILABLE: "#3B6D11",
-  MEDIA_DECLINED: "#A32D2D",
-  MEDIA_FAILED: "#A32D2D",
-  MEDIA_AUTO_REQUESTED: "#8A6D1F",
+  MEDIA_PENDING: "#e0a42e",
+  MEDIA_APPROVED: "#2bd96b",
+  MEDIA_AUTO_APPROVED: "#2bd96b",
+  MEDIA_AVAILABLE: "#6cf04a",
+  MEDIA_DECLINED: "#e5484d",
+  MEDIA_FAILED: "#e5484d",
+  MEDIA_AUTO_REQUESTED: "#e0a42e",
 };
-const FALLBACK_TYPE_COLOR = "#6B7280";
+const FALLBACK_TYPE_COLOR = "#8f80ad";
 
 const PUSH_LABELS = {
-  approved: { text: ["Elküldve – elfogadva", "Sent – accepted", "Envoyée – acceptée"], color: "#0F6E56" },
-  rejected: { text: ["Elküldve – elutasítva", "Sent – rejected", "Envoyée – rejetée"], color: "#8A6D1F" },
-  error: { text: ["Küldési hiba", "Send error", "Erreur d'envoi"], color: "#A32D2D" },
+  approved: { text: ["Elküldve – elfogadva", "Sent – accepted", "Envoyée – acceptée"], color: "#2bd96b" },
+  rejected: { text: ["Elküldve – elutasítva", "Sent – rejected", "Envoyée – rejetée"], color: "#e0a42e" },
+  error: { text: ["Küldési hiba", "Send error", "Erreur d'envoi"], color: "#e5484d" },
 };
 
 const btn = {
-  fontSize: 11, padding: "3px 9px", borderRadius: 6, border: "1px solid var(--border)",
-  background: "var(--bg3, var(--bg2))", color: "var(--text)", cursor: "pointer", whiteSpace: "nowrap",
+  fontSize: 11, padding: "3px 9px", borderRadius: 6, border: "1px solid var(--panel-border)",
+  background: "var(--panel-soft)", color: "var(--text)", cursor: "pointer", whiteSpace: "nowrap",
 };
 
 function fmtTs(ts) {
@@ -73,10 +73,10 @@ function MediaTypeBadge({ type }) {
   return (
     <span style={{
       fontSize: 10, fontWeight: 500, padding: "1px 6px", borderRadius: 3,
-      background: type === "tv" ? "var(--accent-purple-subtle, #EEEDFE)"
-                                : "var(--accent-blue-subtle, #E6F1FB)",
-      color: type === "tv" ? "var(--accent-purple, #534AB7)"
-                           : "var(--accent-blue, #185FA5)",
+      background: type === "tv" ? "color-mix(in srgb, var(--cork) 18%, transparent)"
+                                : "color-mix(in srgb, var(--accent-2) 16%, transparent)",
+      color: type === "tv" ? "var(--accent-2)"
+                           : "var(--accent-2)",
     }}>
       {type === "tv" ? L("Sorozat", "Series", "Série") : L("Film", "Movie", "Film")}
     </span>
@@ -86,7 +86,7 @@ function MediaTypeBadge({ type }) {
 function StatTile({ label, value, color }) {
   return (
     <div style={{
-      flex: "1 1 110px", background: "var(--bg2)", border: "1px solid var(--border)",
+      flex: "1 1 110px", background: "var(--panel)", border: "1px solid var(--panel-border)",
       borderRadius: 10, padding: "0.6rem 0.9rem",
     }}>
       <div style={{ fontSize: 11, color: "var(--muted)" }}>{label}</div>
@@ -103,13 +103,13 @@ function RequestCard({ req, busy, onAction }) {
 
   return (
     <div style={{
-      background: "var(--bg2)", border: "1px solid " +
-        (req.matched ? "var(--teal100, #9FE1CB)" : "var(--border)"),
+      background: "var(--panel)", border: "1px solid " +
+        (req.matched ? "color-mix(in srgb, var(--toxin-strong) 55%, transparent)" : "var(--panel-border)"),
       borderRadius: 10, padding: "0.75rem 1rem",
       display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "4px 14px", alignItems: "start",
     }}>
       {/* Poster */}
-      <div style={{ width: 46, height: 69, borderRadius: 6, overflow: "hidden", background: "var(--bg3, var(--bg))" }}>
+      <div style={{ width: 46, height: 69, borderRadius: 6, overflow: "hidden", background: "var(--input-bg)" }}>
         {req.posterUrl ? (
           <img src={req.posterUrl} alt="" loading="lazy" referrerPolicy="no-referrer"
             style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -129,7 +129,7 @@ function RequestCard({ req, busy, onAction }) {
           <MediaTypeBadge type={req.mediaType} />
           <TypeBadge type={req.type} />
           {req.matched && (
-            <span style={{ fontSize: 11, color: "var(--teal600, #0F6E56)", fontWeight: 500 }}>
+            <span style={{ fontSize: 11, color: "var(--accent)", fontWeight: 500 }}>
               ✓ {L("Egyeztetett", "Matched", "Associée")}
             </span>
           )}
@@ -145,7 +145,7 @@ function RequestCard({ req, busy, onAction }) {
         </div>
         {req.matched && req.matchedReleaseId && (
           <div
-            style={{ fontSize: 12, marginTop: 5, color: "var(--text2)", overflow: "hidden",
+            style={{ fontSize: 12, marginTop: 5, color: "var(--muted)", overflow: "hidden",
               textOverflow: "ellipsis", whiteSpace: "nowrap" }}
             title={req.matchedReleaseTitle || ""}
           >
@@ -170,7 +170,7 @@ function RequestCard({ req, busy, onAction }) {
           <a
             href={`https://www.themoviedb.org/${req.mediaType === "tv" ? "tv" : "movie"}/${req.tmdbId}`}
             target="_blank" rel="noreferrer"
-            style={{ fontSize: 11, color: "var(--accent-blue, #185FA5)", textDecoration: "none" }}
+            style={{ fontSize: 11, color: "var(--accent-2)", textDecoration: "none" }}
           >
             TMDB ↗
           </a>
@@ -188,7 +188,7 @@ function RequestCard({ req, busy, onAction }) {
         </button>
         {confirmDelete ? (
           <span style={{ display: "flex", gap: 4 }}>
-            <button type="button" style={{ ...btn, background: "#A32D2D", color: "#fff", border: "none" }}
+            <button type="button" style={{ ...btn, background: "#e5484d", color: "#fff", border: "none" }}
               disabled={!!busy} onClick={() => { setConfirmDelete(false); onAction("delete", req); }}>
               {L("Biztos?", "Sure?", "Sûr ?")}
             </button>
@@ -293,7 +293,7 @@ export default function SeerrRequestsPage() {
             onClick={runMatch}
             disabled={matching}
             style={{ fontSize: 12, padding: "5px 12px", borderRadius: 6,
-              background: "var(--accent-teal, #0F6E56)", color: "#fff", border: "none",
+              background: "var(--accent-fill)", color: "var(--on-accent)", border: "none",
               cursor: matching ? "not-allowed" : "pointer", opacity: matching ? 0.6 : 1 }}
           >
             {matching ? L("Egyeztetés…", "Matching…", "Association…") : `🔗 ${L("Egyeztetés futtatása", "Run matching", "Lancer l'association")}`}
@@ -301,15 +301,15 @@ export default function SeerrRequestsPage() {
           <button
             onClick={load}
             style={{ fontSize: 12, padding: "5px 12px", borderRadius: 6,
-              border: "1px solid var(--border)", background: "var(--bg2)", cursor: "pointer" }}
+              border: "1px solid var(--panel-border)", background: "var(--panel)", cursor: "pointer" }}
           >
             ↻ {L("Frissítés", "Refresh", "Actualiser")}
           </button>
           <button
             onClick={() => setShowSettings((v) => !v)}
             style={{ fontSize: 12, padding: "5px 12px", borderRadius: 6, cursor: "pointer",
-              border: "1px solid " + (showSettings ? "var(--accent-blue, #185FA5)" : "var(--border)"),
-              background: showSettings ? "var(--accent-blue-subtle, #E6F1FB)" : "var(--bg2)" }}
+              border: "1px solid " + (showSettings ? "var(--accent-2)" : "var(--panel-border)"),
+              background: showSettings ? "color-mix(in srgb, var(--accent-2) 16%, transparent)" : "var(--panel)" }}
           >
             ⚙️ {L("Beállítások", "Settings", "Paramètres")}
           </button>
@@ -320,10 +320,10 @@ export default function SeerrRequestsPage() {
       {stats && (
         <div style={{ display: "flex", gap: 8, marginBottom: "1rem", flexWrap: "wrap" }}>
           <StatTile label={L("Összes kérés", "All requests", "Toutes les demandes")} value={stats.total} />
-          <StatTile label={L("Várakozik", "Waiting", "En attente")} value={stats.pending} color="#8A6D1F" />
-          <StatTile label={L("Egyeztetett", "Matched", "Associées")} value={stats.matched} color="#0F6E56" />
-          <StatTile label={L("Arr-ba küldve", "Sent to Arr", "Envoyées vers Arr")} value={stats.pushed} color="#534AB7" />
-          <StatTile label={L("Elutasított", "Declined", "Refusées")} value={stats.declined} color="#A32D2D" />
+          <StatTile label={L("Várakozik", "Waiting", "En attente")} value={stats.pending} color="#e0a42e" />
+          <StatTile label={L("Egyeztetett", "Matched", "Associées")} value={stats.matched} color="#2bd96b" />
+          <StatTile label={L("Arr-ba küldve", "Sent to Arr", "Envoyées vers Arr")} value={stats.pushed} color="#a77bff" />
+          <StatTile label={L("Elutasított", "Declined", "Refusées")} value={stats.declined} color="#e5484d" />
         </div>
       )}
 
@@ -331,9 +331,9 @@ export default function SeerrRequestsPage() {
 
       {/* Webhook setup info */}
       <div style={{
-        background: "var(--bg2)", border: "1px solid var(--border)",
+        background: "var(--panel)", border: "1px solid var(--panel-border)",
         borderRadius: 10, padding: "1rem 1.25rem", marginBottom: "1.25rem",
-        fontSize: 13, color: "var(--text2)"
+        fontSize: 13, color: "var(--muted)"
       }}>
         <strong style={{ color: "var(--text)", display: "block", marginBottom: 6 }}>
           🔌 {L("Webhook beállítás Seerr-ben", "Webhook setup in Seerr", "Configuration du webhook dans Seerr")}
@@ -341,7 +341,7 @@ export default function SeerrRequestsPage() {
         {L("Seerr → Beállítások → Értesítések → Webhook", "Seerr → Settings → Notifications → Webhook", "Seerr → Paramètres → Notifications → Webhook")}<br />
         <code style={{
           display: "inline-block", marginTop: 6, padding: "3px 8px",
-          background: "var(--bg3)", borderRadius: 4, fontSize: 12, userSelect: "all"
+          background: "var(--panel-soft)", borderRadius: 4, fontSize: 12, userSelect: "all"
         }}>
           POST {window.location.origin}/api/seerr/webhook
         </code>
@@ -359,9 +359,9 @@ export default function SeerrRequestsPage() {
         {[["all", L("Összes", "All", "Toutes")], ["unmatched", L("Nem egyeztetett", "Unmatched", "Non associées")], ["matched", L("Egyeztetett", "Matched", "Associées")]].map(([v, l]) => (
           <button key={v} onClick={() => setFilter(v)} style={{
             fontSize: 13, padding: "4px 12px", borderRadius: 16,
-            border: "1px solid " + (filter === v ? "var(--accent-blue, #185FA5)" : "var(--border)"),
-            background: filter === v ? "var(--accent-blue-subtle, #E6F1FB)" : "var(--bg2)",
-            color: filter === v ? "var(--accent-blue, #185FA5)" : "var(--text2)",
+            border: "1px solid " + (filter === v ? "var(--accent-2)" : "var(--panel-border)"),
+            background: filter === v ? "color-mix(in srgb, var(--accent-2) 16%, transparent)" : "var(--panel)",
+            color: filter === v ? "var(--accent-2)" : "var(--muted)",
             cursor: "pointer",
           }}>
             {l}
@@ -373,16 +373,16 @@ export default function SeerrRequestsPage() {
       </div>
 
       {err && (
-        <div style={{ background: "var(--red-subtle, #FCEBEB)", border: "1px solid var(--red, #A32D2D)",
-          borderRadius: 8, padding: "0.75rem 1rem", color: "var(--red, #A32D2D)",
+        <div style={{ background: "color-mix(in srgb, var(--danger) 12%, transparent)", border: "1px solid var(--danger)",
+          borderRadius: 8, padding: "0.75rem 1rem", color: "var(--danger)",
           marginBottom: "1rem", fontSize: 13 }}>
           {err}
         </div>
       )}
 
       {info && !err && (
-        <div style={{ background: "var(--bg2)", border: "1px solid var(--border)",
-          borderRadius: 8, padding: "0.6rem 1rem", color: "var(--text2)",
+        <div style={{ background: "var(--panel)", border: "1px solid var(--panel-border)",
+          borderRadius: 8, padding: "0.6rem 1rem", color: "var(--muted)",
           marginBottom: "1rem", fontSize: 13 }}>
           {info}
         </div>
@@ -397,7 +397,7 @@ export default function SeerrRequestsPage() {
       {!loading && displayed.length === 0 && (
         <div style={{
           textAlign: "center", padding: "3rem", color: "var(--muted)",
-          background: "var(--bg2)", borderRadius: 10, border: "1px solid var(--border)"
+          background: "var(--panel)", borderRadius: 10, border: "1px solid var(--panel-border)"
         }}>
           <div style={{ fontSize: 32, marginBottom: 8 }}>📭</div>
           <div style={{ fontSize: 14 }}>

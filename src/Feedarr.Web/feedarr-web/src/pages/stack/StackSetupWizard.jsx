@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useOptionalSubbarSetter } from "../../layout/useSubbar.js";
+import SubAction from "../../ui/SubAction.jsx";
 import { apiGet, apiPost, apiPut } from "../../api/client.js";
 import { applyUiLanguage, LANGUAGE_OPTIONS, normalizeUiLanguage } from "../../app/locale.js";
 import { NO_RUNTIME_TRANSLATE, useL } from "../../app/i18n.js";
@@ -110,10 +112,28 @@ function Embed({ port, title, height = 520 }) {
   );
 }
 
-export default function StackSetupWizard() {
+// Apps that can be configured one by one from Settings → App setup.
+const APP_STEP_IDS = STACK_STEPS.filter((s) => s.type).map((s) => s.id);
+const NEEDS_CREDENTIALS = new Set(["radarr", "sonarr", "prowlarr", "qbittorrent"]);
+
+function initialSettingsStep() {
+  let wanted = null;
+  try { wanted = new URLSearchParams(window.location.search).get("app"); } catch { /* ignore */ }
+  const idx = STACK_STEPS.findIndex((s) => s.id === wanted && s.type);
+  return idx > 0 ? idx : STACK_STEPS.findIndex((s) => s.id === APP_STEP_IDS[0]);
+}
+
+/**
+ * mode="wizard"   – first-run stack setup (/stack-setup), step by step.
+ * mode="settings" – Settings → App setup: pick any app and run its step on its own.
+ */
+export default function StackSetupWizard({ mode = "wizard" }) {
+  const settingsMode = mode === "settings";
   const navigate = useNavigate();
   const L = useL();
+  const setSubbar = useOptionalSubbarSetter();
   const [step, setStep] = useState(() => {
+    if (settingsMode) return initialSettingsStep();
     const s = Number(readSession(STEP_KEY, 0));
     return Number.isInteger(s) && s >= 0 && s < STACK_STEPS.length ? s : 0;
   });
@@ -148,15 +168,17 @@ export default function StackSetupWizard() {
   }, []);
 
   useEffect(() => { loadStatus(); }, [loadStatus, step]);
-  useEffect(() => { writeSession(STEP_KEY, step); }, [step]);
+  useEffect(() => { if (!settingsMode) writeSession(STEP_KEY, step); }, [step, settingsMode]);
 
   // The wizard starts in Hungarian unless the user already picked a language here.
+  // (Settings mode keeps the language the user already uses.)
   useEffect(() => {
+    if (settingsMode) return;
     const chosen = readSession(LANG_KEY, null);
     const lang = normalizeUiLanguage(chosen || "hu-HU");
     setForm((f) => ({ ...f, language: lang }));
     applyUiLanguage(lang, true);
-  }, []);
+  }, [settingsMode]);
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const current = STACK_STEPS[step];
@@ -213,7 +235,9 @@ export default function StackSetupWizard() {
     if (r) setStep(1);
   };
 
-  const credsBody = () => ({ username: creds?.username || form.username, password: creds?.password || form.password });
+  const credsBody = () => (settingsMode && form.username && form.password
+    ? { username: form.username.trim(), password: form.password }
+    : { username: creds?.username || form.username, password: creds?.password || form.password });
 
   const actions = {
     plex: () => run("plex", () => apiPost("/api/stack-setup/plex", {
@@ -286,7 +310,52 @@ export default function StackSetupWizard() {
     feedarr: "Poisonarr",
   }), [L]);
 
-  const needCreds = step > 0 && !creds;
+  const needCreds = !settingsMode && step > 0 && !creds;
+
+  // Settings mode: refresh action in the toolbar, selected app kept in the URL (?app=radarr)
+  useEffect(() => {
+    if (!settingsMode || !setSubbar) return undefined;
+    setSubbar(
+      <div className="settings-subbar-content" {...NO_RUNTIME_TRANSLATE}>
+        <SubAction icon="refresh" label={L("Frissítés", "Refresh", "Actualiser")} onClick={() => loadStatus()} />
+      </div>
+    );
+    return () => setSubbar(null);
+  }, [settingsMode, setSubbar, loadStatus, L]);
+
+  const selectApp = (idx) => {
+    setStep(idx);
+    setError("");
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("app", STACK_STEPS[idx].id);
+      window.history.replaceState(window.history.state, "", url);
+    } catch { /* ignore */ }
+  };
+
+  const appState = (st) => {
+    if (!st?.installed) return { tone: "off", text: L("nincs telepítve", "not installed", "non installé") };
+    if (!st.online) return { tone: "bad", text: L("nem elérhető", "unreachable", "injoignable") };
+    if (st.configured) return { tone: "ok", text: L("beállítva", "configured", "configuré") };
+    return { tone: "todo", text: L("beállításra vár", "needs setup", "à configurer") };
+  };
+
+  const credentialsBox = settingsMode && NEEDS_CREDENTIALS.has(current.id) && (
+    <div className="stack-creds">
+      <div className="stack-creds__text">
+        <strong>{L("Belépés ehhez az alkalmazáshoz", "Login for this app", "Connexion pour cette application")}</strong>
+        <span className="muted">{L("Ezzel a felhasználónévvel és jelszóval állítja be az alkalmazás belépését (a varázslóban megadott közös belépés).", "The app's login is set to this username and password (the shared login from the wizard).", "La connexion de l'application est réglée sur cet identifiant (l'identifiant commun de l'assistant).")}</span>
+      </div>
+      <div className="stack-form">
+        <Field label={L("Felhasználónév", "Username", "Nom d'utilisateur")}>
+          <input type="text" autoComplete="username" value={form.username} onChange={(e) => set({ username: e.target.value })} />
+        </Field>
+        <Field label={L("Jelszó", "Password", "Mot de passe")}>
+          <input type="password" autoComplete="current-password" value={form.password} onChange={(e) => set({ password: e.target.value })} />
+        </Field>
+      </div>
+    </div>
+  );
 
   const renderStep = () => {
     switch (current.id) {
@@ -568,6 +637,51 @@ export default function StackSetupWizard() {
         return null;
     }
   };
+
+  if (settingsMode) {
+    return (
+      <div className="page page--settings stack-setup stack-setup--settings" {...NO_RUNTIME_TRANSLATE}>
+        <div className="pagehead">
+          <div>
+            <h1>{L("Alkalmazások beállítása", "App setup", "Configuration des applications")}</h1>
+            <div className="muted">{L("Válaszd ki, melyik alkalmazást szeretnéd beállítani vagy újra beállítani.", "Choose the app you want to set up or set up again.", "Choisissez l'application à configurer ou reconfigurer.")}</div>
+          </div>
+        </div>
+        <div className="pagehead__divider" />
+
+        <div className="stack-picker" role="tablist" aria-label={L("Alkalmazások", "Apps", "Applications")}>
+          {APP_STEP_IDS.map((id) => {
+            const idx = STACK_STEPS.findIndex((s) => s.id === id);
+            const st = statusOf(status, STACK_STEPS[idx].type);
+            const state = appState(st);
+            const active = idx === step;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className={`stack-picker__item${active ? " is-active" : ""} is-${state.tone}`}
+                onClick={() => selectApp(idx)}
+              >
+                <AppIcon name={appIcon(STACK_STEPS[idx].type)} className="stack-picker__icon" />
+                <span className="stack-picker__name">{stepTitles[id]}</span>
+                <span className="stack-picker__state"><span className="stack-picker__dot" aria-hidden="true" />{state.text}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="setup-card stack-setup__panel" role="tabpanel">
+          <div className="setup-card__content">
+            {credentialsBox}
+            {renderStep()}
+            {error && <div className="stack-error">{error}</div>}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="setup-container stack-setup" {...NO_RUNTIME_TRANSLATE}>

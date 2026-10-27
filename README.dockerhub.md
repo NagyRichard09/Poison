@@ -1,90 +1,48 @@
-# Feedarr
+# Poisonarr – Docker
 
-Feedarr is a smart release dashboard for Torznab, Jackett, and Prowlarr.
+Poisonarr in a single container (API and web UI together, no nginx).
+The image is built from this repository; the full stack (Plex, Seerr, Prowlarr, Sonarr, Radarr,
+Tautulli, qBittorrent) is installed by the [Proxmox installer](proxmox/README.md) instead.
 
-🚀 Monolithic image — API and Web UI are now served from a single container (no nginx, no split services).
+## Build and run
 
-Docker Image
-------------
-Official image:
+```bash
+git clone https://github.com/NagyRichard09/Poison.git && cd Poison
+docker compose -f docker/docker-compose.yml up -d --build
+```
 
-guizmos/feedarr
+or without Compose:
 
-Tags:
-latest → stable release
-beta → beta channel
-vX.Y.Z → specific version
+```bash
+docker build -f docker/Dockerfile -t poisonarr:local .
+docker run -d --name poisonarr -p 8888:8080 -v "$PWD/data:/app/data" \
+  -e PUID=$(id -u) -e PGID=$(id -g) poisonarr:local
+```
 
-⚠️ The old images guizmos/feedarr-api and guizmos/feedarr-web are deprecated and should no longer be used.
+Endpoints:
 
-Source Code
+- Web UI: `http://localhost:8888`
+- API: `http://localhost:8888/api`
+- Health: `http://localhost:8888/health`
 
-Main project: https://github.com/Guizmos/Feedarr
-Backend: https://github.com/Guizmos/Feedarr/tree/main/src/Feedarr.Api
-Frontend: https://github.com/Guizmos/Feedarr/tree/main/src/Feedarr.Web/feedarr-web
+## Environment
 
-# Quick Start (Docker Compose)
-version: "3.9"
+| Variable | Default | Meaning |
+|---|---|---|
+| `ASPNETCORE_URLS` | `http://+:8080` | listen address inside the container |
+| `App__DataDir` | `/app/data` | database, posters, keys, backups |
+| `PUID` / `PGID` | `10001` | owner of the files in the data volume |
+| `FEEDARR_MASTER_KEY` | – | optional stable encryption key (otherwise generated in `/app/data/keys`) |
 
-services:
-  feedarr:
-    image: guizmos/feedarr:latest
-    container_name: FEEDARR
-    restart: unless-stopped
-    environment:
-      ASPNETCORE_URLS: http://+:8080
-      App__DataDir: /app/data
-    volumes:
-      - /volume1/Docker/Feedarr/data:/app/data
-    ports:
-      - "8888:8080"
+Keep `/app/data` on a volume: it holds the database and the encryption keys.
 
-# Start:
+## Reverse proxy
 
-docker compose up -d
-Access
+Point your reverse proxy to `http://poisonarr:8080` (or `http://<host>:8888`). HTTPS should be
+terminated by the proxy. Enable authentication when the instance is reachable from the internet.
 
-Web UI: http://localhost:8888
-API: http://localhost:8888/api
-Health endpoint: http://localhost:8888/health
-Reverse Proxy (Nginx Proxy Manager / Traefik / Caddy)
+## Source and license
 
-Feedarr now runs as a single upstream service.
-
-# Point your reverse proxy to:
-
-http://feedarr:8080
-or
-http://<host-ip>:8888
-
-You no longer need separate rules for /api and /.
-
-# Data Directory
-
-All persistent data is stored in:
-
-/app/data
-
-This includes:
-
-SQLite database
-API keys
-Posters cache
-Backups
-Logs
-
-Mount this path to keep your data safe.
-
-Upgrade from older versions (split API/Web)
-
-Stop your old containers
-
-Remove feedarr-api and feedarr-web services from compose
-
-Replace them with the single feedarr service
-
-Keep the same /app/data volume
-
-Start again
-
-No data migration is required.
+- Source: https://github.com/NagyRichard09/Poison
+- Author: NagyRichard09
+- License: GNU GPL v3 – based on [Feedarr](https://github.com/Guizmos/Feedarr) by Guizmos

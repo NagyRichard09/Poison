@@ -398,7 +398,7 @@ builder.Services.AddHttpClient<OpenLibraryClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(20);
     c.BaseAddress = new Uri("https://openlibrary.org/");
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0 ( https://github.com/Guizmos/feedarr )");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0 ( https://github.com/NagyRichard09/Poison )");
     c.DefaultRequestHeaders.Accept.ParseAdd("application/json");
 }).AddHttpMessageHandler<ProviderCircuitBreakerHandler>()
   .AddHttpMessageHandler<TransientHttpRetryHandler>();
@@ -407,7 +407,7 @@ builder.Services.AddHttpClient<OpenLibraryClient>(c =>
 builder.Services.AddHttpClient<MusicBrainzClient>(c =>
 {
     c.Timeout = TimeSpan.FromSeconds(25);
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0 ( https://github.com/Guizmos/feedarr )");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("Poisonarr/1.0 ( https://github.com/NagyRichard09/Poison )");
     c.DefaultRequestHeaders.Accept.ParseAdd("application/json");
 }).AddHttpMessageHandler<ProviderCircuitBreakerHandler>()
   .AddHttpMessageHandler<TransientHttpRetryHandler>();

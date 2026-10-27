@@ -1,10 +1,17 @@
 import { getActiveUiLanguage } from "../app/locale.js";
 import { normalizeCategoryGroupKey } from "../domain/categories/index.js";
 
+// French uses octets (Go / To), the other UI languages GB / TB.
+function sizeUnits() {
+  return String(getActiveUiLanguage() || "").toLowerCase().startsWith("fr")
+    ? ["B", "KB", "MB", "Go", "To"]
+    : ["B", "KB", "MB", "GB", "TB"];
+}
+
 export function fmtBytes(bytes) {
   const n = Number(bytes);
   if (!Number.isFinite(n) || n <= 0) return "";
-  const units = ["B", "KB", "MB", "Go", "To"];
+  const units = sizeUnits();
   let v = n;
   let i = 0;
   while (v >= 1024 && i < units.length - 1) {
@@ -20,7 +27,7 @@ export function fmtSizeGo(bytes) {
   if (!Number.isFinite(n) || n <= 0) return "";
   const go = n / (1024 * 1024 * 1024);
   const digits = go >= 100 ? 0 : go >= 10 ? 1 : 2;
-  return `${go.toFixed(digits)} Go`;
+  return `${go.toFixed(digits)} ${sizeUnits()[3]}`;
 }
 
 export function fmtDateFromTs(tsSeconds) {

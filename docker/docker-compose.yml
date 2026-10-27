@@ -1,24 +1,26 @@
-version: "3.9"
-
+# Poisonarr – a single container (API + web UI), built from this repository.
+#   docker compose -f docker/docker-compose.yml up -d --build
+# The full stack (Plex, Seerr, *arr, qBittorrent) is installed by the Proxmox installer, see proxmox/README.md.
 services:
-  feedarr:
-    container_name: FEEDARR
-    image: guizmos/feedarr:latest
+  poisonarr:
+    container_name: poisonarr
+    image: poisonarr:local
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     restart: unless-stopped
     environment:
       ASPNETCORE_URLS: http://+:8080
       App__DataDir: /app/data
 
-      # PUID/PGID : UID/GID du compte qui doit posséder les fichiers sur l'hôte.
-      # Adapter à votre environnement (id -u / id -g sur le NAS).
-      # Par défaut : 10001 (utilisateur interne feedarr).
+      # PUID/PGID: UID/GID of the account that should own the files on the host (id -u / id -g).
       PUID: "10001"
       PGID: "10001"
 
-      # OPTIONNEL : clé stable (sinon l'app en génère une et la stocke dans /app/data/keys)
-      # FEEDARR_MASTER_KEY: "met-une-valeur-unique-ici"
+      # Optional: stable master key (otherwise one is generated and stored in /app/data/keys)
+      # FEEDARR_MASTER_KEY: "put-a-unique-value-here"
 
     volumes:
-      - /volume1/Docker/Feedarr/data:/app/data
+      - ./data:/app/data
     ports:
       - "8888:8080"

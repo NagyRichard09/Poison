@@ -87,6 +87,7 @@ export const router = createBrowserRouter([
       { path: "settings/maintenance", element: withSuspense(<Settings />, "Maintenance") },
       { path: "settings/backup", element: withSuspense(<Settings />, "Sauvegardes") },
       { path: "settings/storage", element: withSuspense(<Settings />, "Stockage") },
+      { path: "settings/setup", element: withSuspense(<Settings />, "Configuration des applications") },
       { path: "settings/hub", element: withSuspense(<Settings />, "Centre d'applications") },
       { path: "apps/:id", element: withSuspense(<AppEmbedPage />, "Application") },
       { path: "settings/about", element: <Navigate to="/system/updates" replace /> },

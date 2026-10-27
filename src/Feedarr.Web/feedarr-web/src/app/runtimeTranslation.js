@@ -23,6 +23,11 @@ const PHRASE_TRANSLATIONS = {
   "🇭🇺 oui": t("🇭🇺 Yes", { hu: "🇭🇺 Igen" }),
   stockage: t("Storage", { hu: "Tárhely" }),
   "demandes seerr": t("Seerr requests", { hu: "Seerr kérések" }),
+  "configuration des applications": t("App setup", { hu: "Alkalmazások beállítása" }),
+  "aucune description disponible": t("No description available", { hu: "Nincs elérhető leírás" }),
+  synopsis: t("Synopsis", { hu: "Leírás" }),
+  publie: t("Published", { hu: "Megjelent" }),
+  leechers: t("Leechers", { hu: "Letöltők" }),
   "lancer poisonarr": t("Launch Poisonarr", { hu: "Poisonarr indítása" }),
   "bienvenue sur poisonarr": t("Welcome to Poisonarr", { hu: "Üdvözöl a Poisonarr" }),
 
